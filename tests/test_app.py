@@ -49,7 +49,8 @@ class TestModelConstants:
 class TestGetVoices:
     def test_returns_voices_for_language(self) -> None:
         voices = get_voices("a")
-        assert all(v[1] == "a" for v in voices)
+        assert len(voices) > 0
+        assert all(v[0] == "a" for v in voices)
 
     def test_returns_empty_for_unknown_language(self) -> None:
         voices = get_voices("x")

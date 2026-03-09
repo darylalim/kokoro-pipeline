@@ -35,7 +35,7 @@ def get_voices(lang_code: str) -> list[str]:
         name = entry.rfilename
         if name.endswith(".pt") and name.startswith("voices/"):
             voice = name.removeprefix("voices/").removesuffix(".pt")
-            if len(voice) >= 2 and voice[1] == lang_code:
+            if len(voice) >= 2 and voice[0] == lang_code:
                 voices.append(voice)
     return sorted(voices)
 
@@ -52,6 +52,8 @@ def generate_speech(
     speed: float = 1.0,
 ) -> np.ndarray:
     chunks = list(pipeline(text, voice=voice, speed=speed))
+    if not chunks:
+        raise ValueError("No audio generated. Check your input text.")
     audio = np.concatenate([c.audio for c in chunks])
     return audio.astype(np.float32)
 
@@ -85,7 +87,7 @@ with voice_col2:
     voice = st.selectbox(
         "Voice",
         options=voices,
-        help="Select a voice. Names starting with 'f' are female, 'm' are male.",
+        help="The second letter indicates gender: 'f' for female, 'm' for male.",
     )
 
 st.subheader("Style")
