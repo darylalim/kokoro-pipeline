@@ -1,75 +1,29 @@
-import warnings
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import torch
-
-import diffusers.models.lora
-import torch.nn as nn
-import torchaudio.backend.no_backend
-import torchaudio.backend.soundfile_backend
-import torchaudio.backend.sox_io_backend
 
 from streamlit_app import (
     LANGUAGES,
     MODEL_NAME,
-    ChatterboxMultilingualTTS,
+    SAMPLE_RATE,
     generate_speech,
-    get_device,
-    load_model,
+    get_voices,
+    load_pipeline,
 )
 
 EXPECTED_LANGUAGES = [
-    "Arabic",
-    "Chinese",
-    "Danish",
-    "Dutch",
-    "English",
-    "Finnish",
+    "American English",
+    "Brazilian Portuguese",
+    "British English",
     "French",
-    "German",
-    "Greek",
-    "Hebrew",
     "Hindi",
     "Italian",
     "Japanese",
-    "Korean",
-    "Malay",
-    "Norwegian",
-    "Polish",
-    "Portuguese",
-    "Russian",
+    "Mandarin Chinese",
     "Spanish",
-    "Swahili",
-    "Swedish",
-    "Turkish",
 ]
 
-EXPECTED_CODES = {
-    "ar",
-    "da",
-    "de",
-    "el",
-    "en",
-    "es",
-    "fi",
-    "fr",
-    "he",
-    "hi",
-    "it",
-    "ja",
-    "ko",
-    "ms",
-    "nl",
-    "no",
-    "pl",
-    "pt",
-    "ru",
-    "sv",
-    "sw",
-    "tr",
-    "zh",
-}
+EXPECTED_CODES = {"a", "b", "e", "f", "h", "i", "j", "p", "z"}
 
 
 class TestLanguages:
@@ -81,183 +35,90 @@ class TestLanguages:
         assert codes == EXPECTED_CODES
 
     def test_language_count(self) -> None:
-        assert len(LANGUAGES) == 23
+        assert len(LANGUAGES) == 9
 
 
-class TestDependencyPatches:
-    def test_lora_compatible_linear_replaced_with_nn_linear(self) -> None:
-        assert diffusers.models.lora.LoRACompatibleLinear is nn.Linear
-
-    def test_torchaudio_no_backend_getattr_no_warning(self) -> None:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            hasattr(torchaudio.backend.no_backend, "__path__")
-
-    def test_torchaudio_soundfile_backend_getattr_no_warning(self) -> None:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            hasattr(torchaudio.backend.soundfile_backend, "__path__")
-
-    def test_torchaudio_sox_io_backend_getattr_no_warning(self) -> None:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            hasattr(torchaudio.backend.sox_io_backend, "__path__")
-
-    def test_sdp_kernel_no_warning(self) -> None:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            with torch.backends.cuda.sdp_kernel(
-                enable_flash=True, enable_math=True, enable_mem_efficient=True
-            ):
-                pass
-
-    def test_llama_config_defaults_to_eager_attention(self) -> None:
-        from transformers import LlamaConfig
-
-        config = LlamaConfig()
-        assert config._attn_implementation == "eager"
-
-    def test_generation_config_output_attentions_no_warning(self) -> None:
-        from transformers import GenerationConfig
-
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            warnings.filterwarnings(
-                "ignore",
-                message=r"`return_dict_in_generate` is NOT set to `True`, but `output_attentions` is",
-                category=UserWarning,
-            )
-            GenerationConfig(output_attentions=True)
-        assert not any("output_attentions" in str(w.message) for w in caught)
-
-    def test_alignment_analyzer_logger_suppressed(self) -> None:
-        import logging
-
-        logger = logging.getLogger(
-            "chatterbox.models.t3.inference.alignment_stream_analyzer"
-        )
-        assert logger.level == logging.ERROR
-
-    def test_dynamic_cache_avoids_legacy_path(self) -> None:
-        from transformers.cache_utils import Cache, DynamicCache
-
-        cache = DynamicCache()
-        assert isinstance(cache, Cache)
-        assert len(cache) == 0
-
-
-class TestModelName:
+class TestModelConstants:
     def test_model_name(self) -> None:
-        assert MODEL_NAME == "Chatterbox Multilingual"
+        assert MODEL_NAME == "Kokoro-82M"
+
+    def test_sample_rate(self) -> None:
+        assert SAMPLE_RATE == 24000
 
 
-class TestGetDevice:
-    def test_mps_preferred(self) -> None:
-        with patch("torch.backends.mps.is_available", return_value=True):
-            assert get_device() == "mps"
+class TestGetVoices:
+    def test_returns_voices_for_language(self) -> None:
+        voices = get_voices("a")
+        assert all(v[1] == "a" for v in voices)
 
-    def test_cuda_fallback(self) -> None:
-        with (
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=True),
-        ):
-            assert get_device() == "cuda"
+    def test_returns_empty_for_unknown_language(self) -> None:
+        voices = get_voices("x")
+        assert voices == []
 
-    def test_cpu_fallback(self) -> None:
-        with (
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            assert get_device() == "cpu"
+    def test_voices_are_sorted(self) -> None:
+        voices = get_voices("a")
+        assert voices == sorted(voices)
 
 
-class TestLoadModel:
-    def test_calls_from_pretrained_with_device(self) -> None:
-        load_model("cpu")
-        ChatterboxMultilingualTTS.from_pretrained.assert_called_with(  # type: ignore[union-attribute]
-            device=torch.device("cpu")
-        )
+class TestLoadPipeline:
+    def test_returns_pipeline(self) -> None:
+        pipeline = load_pipeline("a")
+        assert pipeline is not None
 
-    def test_returns_model(self) -> None:
-        model = load_model("cpu")
-        assert model is ChatterboxMultilingualTTS.from_pretrained.return_value  # type: ignore[union-attribute]
+    def test_called_with_lang_code(self) -> None:
+        from kokoro import KPipeline
 
-    def test_patches_torch_load_with_map_location(self) -> None:
-        captured_load = {}
-
-        def fake_from_pretrained(device: torch.device) -> MagicMock:
-            captured_load["fn"] = torch.load
-            return MagicMock()
-
-        ChatterboxMultilingualTTS.from_pretrained.side_effect = fake_from_pretrained  # type: ignore[union-attribute]
-        try:
-            load_model("cpu")
-            # During from_pretrained, torch.load should have map_location baked in
-            assert captured_load["fn"].keywords["map_location"] == torch.device("cpu")
-        finally:
-            ChatterboxMultilingualTTS.from_pretrained.side_effect = None  # type: ignore[union-attribute]
-
-    def test_restores_torch_load_after_loading(self) -> None:
-        original = torch.load
-        load_model("cpu")
-        assert torch.load is original
+        load_pipeline("a")
+        KPipeline.assert_called_with(lang_code="a")
 
 
 class TestGenerateSpeech:
-    def _mock_model(
-        self, *, sample_rate: int = 24000, audio_length: int = 48000
-    ) -> MagicMock:
-        model = MagicMock()
-        model.sr = sample_rate
-        model.generate.return_value = torch.randn(1, audio_length)
-        return model
+    def _mock_pipeline(self, *, audio_length: int = 48000) -> MagicMock:
+        pipeline = MagicMock()
+        chunk = MagicMock()
+        chunk.audio = np.random.randn(audio_length).astype(np.float32)
+        pipeline.return_value = [chunk]
+        return pipeline
 
-    def test_returns_sampling_rate_and_audio(self) -> None:
-        model = self._mock_model()
+    def test_returns_audio_array(self) -> None:
+        pipeline = self._mock_pipeline()
 
-        sampling_rate, audio = generate_speech("hello", "en", model)
+        audio = generate_speech("hello", "af_heart", pipeline)
 
-        assert sampling_rate == 24000
         assert isinstance(audio, np.ndarray)
         assert audio.shape == (48000,)
 
-    def test_calls_generate_with_correct_args(self) -> None:
-        model = self._mock_model()
+    def test_calls_pipeline_with_correct_args(self) -> None:
+        pipeline = self._mock_pipeline()
 
-        generate_speech(
-            "test text",
-            "fr",
-            model,
-            audio_prompt_path="/tmp/ref.wav",
-            cfg_weight=0.3,
-            exaggeration=0.7,
-        )
+        generate_speech("test text", "af_heart", pipeline, speed=1.5)
 
-        model.generate.assert_called_once_with(
-            "test text",
-            language_id="fr",
-            audio_prompt_path="/tmp/ref.wav",
-            cfg_weight=0.3,
-            exaggeration=0.7,
-        )
+        pipeline.assert_called_once_with("test text", voice="af_heart", speed=1.5)
 
-    def test_default_parameters(self) -> None:
-        model = self._mock_model()
+    def test_default_speed(self) -> None:
+        pipeline = self._mock_pipeline()
 
-        generate_speech("test", "en", model)
+        generate_speech("test", "af_heart", pipeline)
 
-        model.generate.assert_called_once_with(
-            "test",
-            language_id="en",
-            audio_prompt_path=None,
-            cfg_weight=0.5,
-            exaggeration=0.5,
-        )
+        pipeline.assert_called_once_with("test", voice="af_heart", speed=1.0)
 
-    def test_output_is_float32_numpy(self) -> None:
-        model = self._mock_model()
-        model.generate.return_value = torch.randn(1, 100, dtype=torch.float16)
+    def test_concatenates_multiple_chunks(self) -> None:
+        pipeline = MagicMock()
+        chunk1 = MagicMock()
+        chunk1.audio = np.ones(100, dtype=np.float32)
+        chunk2 = MagicMock()
+        chunk2.audio = np.zeros(200, dtype=np.float32)
+        pipeline.return_value = [chunk1, chunk2]
 
-        _, audio = generate_speech("test", "en", model)
+        audio = generate_speech("long text", "af_heart", pipeline)
+
+        assert audio.shape == (300,)
+        assert audio[:100].sum() == 100.0
+        assert audio[100:].sum() == 0.0
+
+    def test_output_is_float32(self) -> None:
+        pipeline = self._mock_pipeline()
+
+        audio = generate_speech("test", "af_heart", pipeline)
 
         assert audio.dtype == np.float32
