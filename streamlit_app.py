@@ -42,7 +42,7 @@ def get_voices(lang_code: str) -> list[str]:
 
 @st.cache_resource
 def load_pipeline(lang_code: str) -> KPipeline:
-    return KPipeline(lang_code=lang_code)
+    return KPipeline(lang_code=lang_code, repo_id=REPO_ID)
 
 
 def generate_speech(
