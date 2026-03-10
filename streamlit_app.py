@@ -13,6 +13,7 @@ from kokoro import KPipeline
 MODEL_NAME = "Kokoro-82M"
 SAMPLE_RATE = 24000
 REPO_ID = "hexgrad/Kokoro-82M"
+HISTORY_MAX = 20
 
 LANGUAGES: dict[str, str] = {
     "American English": "a",
@@ -66,10 +67,10 @@ st.subheader("Text")
 text_input = st.text_area(
     "Text",
     placeholder="Enter text...",
-    max_chars=300,
-    height=150,
-    help="Maximum 300 characters per generation.",
+    height=200,
+    help="Enter text for speech generation.",
 )
+st.caption(f"{len(text_input)} characters")
 
 st.subheader("Voice")
 voice_col1, voice_col2 = st.columns(2)
