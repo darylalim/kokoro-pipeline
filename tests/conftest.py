@@ -15,6 +15,9 @@ _st.slider.side_effect = lambda label, **_kw: {
 _st.button.return_value = False
 _st.text_area.return_value = ""
 _st.columns.side_effect = lambda n: [MagicMock() for _ in range(n)]
+_st.toggle.return_value = False
+_st.multiselect.return_value = []
+_st.session_state = {}
 sys.modules["streamlit"] = _st
 
 # Mock kokoro to prevent model downloads on import
