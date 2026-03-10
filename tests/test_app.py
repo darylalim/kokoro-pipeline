@@ -1,10 +1,12 @@
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 
 from streamlit_app import (
     LANGUAGES,
     MODEL_NAME,
+    REPO_ID,
     SAMPLE_RATE,
     generate_speech,
     get_voices,
@@ -45,6 +47,9 @@ class TestModelConstants:
     def test_sample_rate(self) -> None:
         assert SAMPLE_RATE == 24000
 
+    def test_repo_id(self) -> None:
+        assert REPO_ID == "hexgrad/Kokoro-82M"
+
 
 class TestGetVoices:
     def test_returns_voices_for_language(self) -> None:
@@ -59,6 +64,22 @@ class TestGetVoices:
     def test_voices_are_sorted(self) -> None:
         voices = get_voices("a")
         assert voices == sorted(voices)
+
+    def test_returns_correct_voices(self) -> None:
+        voices = get_voices("a")
+        assert voices == ["af_bella", "af_heart", "am_adam"]
+
+    def test_skips_entries_without_rfilename(self) -> None:
+        from huggingface_hub import list_repo_tree
+
+        original = list_repo_tree.return_value  # type: ignore[union-attribute]
+        folder = MagicMock(spec=[])  # no rfilename attribute
+        list_repo_tree.return_value = [folder] + list(original)  # type: ignore[union-attribute]
+        try:
+            voices = get_voices("a")
+            assert "af_heart" in voices
+        finally:
+            list_repo_tree.return_value = original  # type: ignore[union-attribute]
 
 
 class TestLoadPipeline:
@@ -123,3 +144,10 @@ class TestGenerateSpeech:
         audio = generate_speech("test", "af_heart", pipeline)
 
         assert audio.dtype == np.float32
+
+    def test_raises_on_empty_chunks(self) -> None:
+        pipeline = MagicMock()
+        pipeline.return_value = []
+
+        with pytest.raises(ValueError, match="No audio generated"):
+            generate_speech("test", "af_heart", pipeline)
