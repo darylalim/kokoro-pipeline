@@ -50,7 +50,7 @@ uv run streamlit run streamlit_app.py
 
 ### Model
 
-[Kokoro-82M](https://github.com/hexgrad/kokoro) (`KPipeline` from `kokoro` package), 82M params. Sample rate: 24000 Hz.
+[Kokoro-82M](https://github.com/hexgrad/kokoro) (`KPipeline` from `kokoro` package), 82M params. Sample rate: 24000 Hz. `repo_id` is passed explicitly to suppress default warnings.
 
 ### Supported Languages
 
