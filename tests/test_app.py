@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+import streamlit as st
 
 from streamlit_app import (
     HISTORY_MAX,
@@ -13,6 +14,7 @@ from streamlit_app import (
     generate_speech,
     get_voices,
     load_pipeline,
+    render_output,
 )
 
 EXPECTED_LANGUAGES = [
@@ -209,3 +211,86 @@ class TestAddToHistory:
         add_to_history(history, new)
         assert len(history) == HISTORY_MAX
         assert history[0] is new
+
+
+class TestRenderOutput:
+    @staticmethod
+    def _make_result(voice: str = "af_heart", text: str = "hello") -> dict[str, object]:
+        return {
+            "audio": np.ones(24000, dtype=np.float32),
+            "voice": voice,
+            "text": text,
+            "speed": 1.0,
+            "duration": 1.0,
+            "generation_time": 0.5,
+        }
+
+    def _reset_st_mocks(self) -> None:
+        st.audio.reset_mock()  # type: ignore[union-attribute]
+        st.download_button.reset_mock()  # type: ignore[union-attribute]
+        st.markdown.reset_mock()  # type: ignore[union-attribute]
+        st.metric.reset_mock()  # type: ignore[union-attribute]
+
+    def test_empty_results_returns_early(self) -> None:
+        self._reset_st_mocks()
+        render_output([])
+        st.audio.assert_not_called()  # type: ignore[union-attribute]
+        st.download_button.assert_not_called()  # type: ignore[union-attribute]
+
+    def test_single_result_renders_audio(self) -> None:
+        self._reset_st_mocks()
+        render_output([self._make_result()])
+        st.audio.assert_called_once()  # type: ignore[union-attribute]
+
+    def test_single_result_download_filename(self) -> None:
+        self._reset_st_mocks()
+        render_output([self._make_result()])
+        st.download_button.assert_called_once()  # type: ignore[union-attribute]
+        call_kwargs = st.download_button.call_args[1]  # type: ignore[union-attribute]
+        assert call_kwargs["file_name"] == "speech.wav"
+
+    def test_single_result_download_label(self) -> None:
+        self._reset_st_mocks()
+        render_output([self._make_result()])
+        call_kwargs = st.download_button.call_args[1]  # type: ignore[union-attribute]
+        assert call_kwargs["label"] == "Download Audio"
+
+    def test_compare_renders_audio_per_voice(self) -> None:
+        self._reset_st_mocks()
+        results = [self._make_result("af_heart"), self._make_result("af_bella")]
+        render_output(results)
+        assert st.audio.call_count == 2  # type: ignore[union-attribute]
+
+    def test_compare_download_filenames(self) -> None:
+        self._reset_st_mocks()
+        results = [self._make_result("af_heart"), self._make_result("af_bella")]
+        render_output(results)
+        assert st.download_button.call_count == 2  # type: ignore[union-attribute]
+        filenames = [
+            call[1]["file_name"]
+            for call in st.download_button.call_args_list  # type: ignore[union-attribute]
+        ]
+        assert "speech_af_heart.wav" in filenames
+        assert "speech_af_bella.wav" in filenames
+
+    def test_compare_voice_labels(self) -> None:
+        self._reset_st_mocks()
+        results = [self._make_result("af_heart"), self._make_result("af_bella")]
+        render_output(results)
+        markdown_calls = [
+            call[0][0]
+            for call in st.markdown.call_args_list  # type: ignore[union-attribute]
+        ]
+        assert "### af_heart" in markdown_calls
+        assert "### af_bella" in markdown_calls
+
+    def test_compare_download_labels_include_voice(self) -> None:
+        self._reset_st_mocks()
+        results = [self._make_result("af_heart"), self._make_result("am_adam")]
+        render_output(results)
+        labels = [
+            call[1]["label"]
+            for call in st.download_button.call_args_list  # type: ignore[union-attribute]
+        ]
+        assert "Download af_heart" in labels
+        assert "Download am_adam" in labels
