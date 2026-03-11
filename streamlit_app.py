@@ -117,6 +117,22 @@ if "current_output" not in st.session_state:
 if "history" not in st.session_state:
     st.session_state["history"] = []
 
+with st.sidebar:
+    st.header("Generation History")
+    history = st.session_state["history"]
+    if not history:
+        st.caption("No generations yet.")
+    for i, entry in enumerate(history):
+        text = str(entry[0]["text"])
+        text_preview = text[:50] + ("..." if len(text) > 50 else "")
+        voice_names = ", ".join(str(r["voice"]) for r in entry)
+        st.markdown(f"**{text_preview}**")
+        st.caption(voice_names)
+        for result in entry:
+            st.audio(result["audio"], sample_rate=SAMPLE_RATE)
+        if st.button("Load", key=f"load_{i}"):
+            st.session_state["current_output"] = entry
+
 st.title("Text to Speech Pipeline")
 st.write("Generate multilingual speech with Kokoro.")
 
