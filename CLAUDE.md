@@ -44,7 +44,7 @@ uv run streamlit run streamlit_app.py
 
 ### Files
 
-- `streamlit_app.py` — single-file app with text input, language/voice selection, speed control, and audio playback
+- `streamlit_app.py` — single-file app with text input, language/voice selection, speed control, audio playback, voice comparison, and session-based history. Helper functions: `add_to_history` (history management), `render_output` (output rendering for single and compare modes)
 - `tests/conftest.py` — mocks `streamlit`, `kokoro`, and `huggingface_hub` for import
 - `tests/test_app.py` — unit tests
 
@@ -69,15 +69,18 @@ Voices are discovered dynamically from the HuggingFace Hub (`hexgrad/Kokoro-82M`
 
 ### UI
 
-- Text input (max 300 characters)
+- Text input (no character limit, live character count)
 - Language selection (9 languages via `LANGUAGES` dict)
 - Voice selector (dynamically populated from HuggingFace Hub)
+- Compare Voices toggle: switches voice selector to multiselect (max 3 voices)
 - Speed slider (0.5–2.0, default 1.0)
 - Generated audio displayed in browser player via `st.audio`
 - WAV download via `st.download_button` (saved with `scipy.io.wavfile.write`)
 - Metrics via `st.metric`: model name, input characters, output duration, generation time
+- Compare mode: shared Model + Input Characters metrics, per-voice Duration + Generation Time
 - Errors shown with `st.exception()`
-- No session state for audio persistence
+- Session state (`st.session_state`) persists current output and generation history across reruns
+- Sidebar generation history (max 20 entries, newest first) with Load buttons
 
 ## Resources
 
