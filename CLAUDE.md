@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Streamlit web app for generating multilingual speech using [Kokoro-82M](https://github.com/hexgrad/kokoro), a lightweight text-to-speech model by [Hexgrad](https://github.com/hexgrad).
 
-## Setup
+## Installation
 
 Requires `espeak-ng` system dependency.
 
@@ -44,7 +44,7 @@ uv run streamlit run streamlit_app.py
 
 ### Files
 
-- `streamlit_app.py` — single-file app with text input, language/voice selection, speed control, audio playback, voice comparison, and session-based history. Helper functions: `add_to_history` (history management), `render_output` (output rendering for single and compare modes)
+- `streamlit_app.py` — single-file app: text input, language/voice selection, speed control, audio playback, voice comparison, session-based generation history. Key helpers: `add_to_history`, `render_output`
 - `tests/conftest.py` — mocks `streamlit`, `kokoro`, and `huggingface_hub` for import
 - `tests/test_app.py` — unit tests
 
