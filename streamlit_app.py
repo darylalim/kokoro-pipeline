@@ -110,6 +110,12 @@ def render_output(results: list[dict[str, object]]) -> None:
         )
 
 
+
+if "current_output" not in st.session_state:
+    st.session_state["current_output"] = None
+if "history" not in st.session_state:
+    st.session_state["history"] = []
+
 st.title("Text to Speech Pipeline")
 st.write("Generate multilingual speech with Kokoro.")
 
@@ -158,30 +164,26 @@ with st.spinner("Loading model..."):
 if st.button("Generate", type="primary"):
     if text_input.strip():
         try:
+            results = []
             with st.spinner("Generating speech..."):
                 start = time.perf_counter()
                 audio_array = generate_speech(text_input, voice, pipeline, speed=speed)
-                eval_duration = round(time.perf_counter() - start, 2)
-                output_duration = len(audio_array) / SAMPLE_RATE
-
-            st.audio(audio_array, sample_rate=SAMPLE_RATE)
-
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Model", MODEL_NAME)
-            col2.metric("Input Characters", len(text_input))
-            col3.metric("Output Duration", f"{output_duration:.2f}s")
-            col4.metric("Generation Time", f"{eval_duration}s")
-
-            wav_buffer = io.BytesIO()
-            wavfile.write(wav_buffer, SAMPLE_RATE, audio_array)
-            st.download_button(
-                label="Download Audio",
-                data=wav_buffer.getvalue(),
-                file_name="speech.wav",
-                mime="audio/wav",
-            )
-
+                gen_time = round(time.perf_counter() - start, 2)
+                results.append({
+                    "audio": audio_array,
+                    "voice": voice,
+                    "text": text_input,
+                    "speed": speed,
+                    "duration": len(audio_array) / SAMPLE_RATE,
+                    "generation_time": gen_time,
+                })
+            st.session_state["current_output"] = results
+            add_to_history(st.session_state["history"], results)
+            st.rerun()
         except Exception as e:
             st.exception(e)
     else:
         st.warning("Enter text.")
+
+if st.session_state["current_output"] is not None:
+    render_output(st.session_state["current_output"])
