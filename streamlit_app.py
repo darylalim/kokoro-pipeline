@@ -110,7 +110,6 @@ def render_output(results: list[dict[str, object]]) -> None:
         )
 
 
-
 if "current_output" not in st.session_state:
     st.session_state["current_output"] = None
 if "history" not in st.session_state:
@@ -129,6 +128,7 @@ text_input = st.text_area(
 st.caption(f"{len(text_input)} characters")
 
 st.subheader("Voice")
+compare_mode = st.session_state.get("compare_mode", False)
 voice_col1, voice_col2 = st.columns(2)
 
 with voice_col1:
@@ -142,11 +142,22 @@ lang_code = LANGUAGES[language]
 
 with voice_col2:
     voices = get_voices(lang_code)
-    voice = st.selectbox(
-        "Voice",
-        options=voices,
-        help="The second letter indicates gender: 'f' for female, 'm' for male.",
-    )
+    if compare_mode:
+        selected_voices = st.multiselect(
+            "Voices",
+            options=voices,
+            max_selections=3,
+            help="Select up to 3 voices to compare.",
+        )
+    else:
+        voice = st.selectbox(
+            "Voice",
+            options=voices,
+            help="The second letter indicates gender: 'f' for female, 'm' for male.",
+        )
+        selected_voices = [voice]
+
+st.toggle("Compare Voices", key="compare_mode")
 
 st.subheader("Style")
 speed = st.slider(
@@ -162,28 +173,33 @@ with st.spinner("Loading model..."):
     pipeline = load_pipeline(lang_code)
 
 if st.button("Generate", type="primary"):
-    if text_input.strip():
+    if not text_input.strip():
+        st.warning("Enter text.")
+    elif compare_mode and not selected_voices:
+        st.warning("Select at least one voice.")
+    else:
         try:
             results = []
             with st.spinner("Generating speech..."):
-                start = time.perf_counter()
-                audio_array = generate_speech(text_input, voice, pipeline, speed=speed)
-                gen_time = round(time.perf_counter() - start, 2)
-                results.append({
-                    "audio": audio_array,
-                    "voice": voice,
-                    "text": text_input,
-                    "speed": speed,
-                    "duration": len(audio_array) / SAMPLE_RATE,
-                    "generation_time": gen_time,
-                })
+                for v in selected_voices:
+                    start = time.perf_counter()
+                    audio_array = generate_speech(text_input, v, pipeline, speed=speed)
+                    gen_time = round(time.perf_counter() - start, 2)
+                    results.append(
+                        {
+                            "audio": audio_array,
+                            "voice": v,
+                            "text": text_input,
+                            "speed": speed,
+                            "duration": len(audio_array) / SAMPLE_RATE,
+                            "generation_time": gen_time,
+                        }
+                    )
             st.session_state["current_output"] = results
             add_to_history(st.session_state["history"], results)
             st.rerun()
         except Exception as e:
             st.exception(e)
-    else:
-        st.warning("Enter text.")
 
 if st.session_state["current_output"] is not None:
     render_output(st.session_state["current_output"])
