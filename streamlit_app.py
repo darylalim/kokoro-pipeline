@@ -71,6 +71,8 @@ def add_to_history(
 
 
 def render_output(results: list[dict[str, object]]) -> None:
+    if not results:
+        return
     if len(results) > 1:
         col1, col2 = st.columns(2)
         col1.metric("Model", MODEL_NAME)
