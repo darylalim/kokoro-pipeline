@@ -233,7 +233,8 @@ if generate_clicked:
                         generate_speech(text_input, v, pipeline, speed=speed), 1
                     ):
                         audio_chunks.append(audio_chunk)
-                        phoneme_chunks.append(phonemes)
+                        if phonemes:
+                            phoneme_chunks.append(phonemes)
                         st.write(f"Chunk {i}...")
                     status.update(label=f"{v} complete!", state="complete")
                 gen_time = round(time.perf_counter() - start, 2)

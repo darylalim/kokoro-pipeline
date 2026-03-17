@@ -44,7 +44,7 @@ uv run streamlit run streamlit_app.py
 
 ### Files
 
-- `streamlit_app.py` — single-file app: text input, language/voice selection, speed control, audio playback, voice comparison, session-based generation history. Key helpers: `add_to_history`, `render_output`
+- `streamlit_app.py` — single-file app: text input, language/voice selection, speed control, audio playback, voice comparison, session-based generation history. Key helpers: `generate_speech` (generator yielding audio/phoneme tuples), `load_tokenizer`, `tokenize_text`, `add_to_history`, `render_output`
 - `tests/conftest.py` — mocks `streamlit`, `kokoro`, and `huggingface_hub` for import
 - `tests/test_app.py` — unit tests
 
@@ -74,6 +74,9 @@ Voices are discovered dynamically from the HuggingFace Hub (`hexgrad/Kokoro-82M`
 - Voice selector (dynamically populated from HuggingFace Hub)
 - Compare Voices toggle: switches voice selector to multiselect (max 3 voices)
 - Speed slider (0.5–2.0, default 1.0)
+- Chunk-by-chunk generation progress via `st.status` (per-voice in compare mode)
+- Tokenize button: shows phoneme tokens without generating audio (uses model-free pipeline)
+- Phoneme token expander (`st.expander` + `st.code`) below audio output; shared in compare mode
 - Generated audio displayed in browser player via `st.audio`
 - WAV download via `st.download_button` (saved with `scipy.io.wavfile.write`)
 - Metrics via `st.metric`: model name, input characters, output duration, generation time
