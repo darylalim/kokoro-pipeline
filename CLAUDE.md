@@ -44,9 +44,17 @@ uv run streamlit run streamlit_app.py
 
 ### Files
 
-- `streamlit_app.py` — single-file app: text input, language/voice selection, speed control, audio playback, voice comparison, session-based generation history. Key helpers: `generate_speech` (generator yielding audio/phoneme tuples), `load_tokenizer`, `tokenize_text`, `add_to_history`, `render_output`
+- `streamlit_app.py` — single-file app: text input, language/voice selection, speed control, audio playback, voice comparison, phoneme tokenization, session-based generation history
 - `tests/conftest.py` — mocks `streamlit`, `kokoro`, and `huggingface_hub` for import
 - `tests/test_app.py` — unit tests
+
+### Key Functions
+
+- `generate_speech` — generator yielding `(audio, phonemes)` tuples per chunk
+- `load_pipeline` / `load_tokenizer` — cached pipeline (with model) and tokenizer (model-free)
+- `tokenize_text` — returns joined phoneme string without running inference
+- `add_to_history` — manages generation history (max 20 entries, newest first)
+- `render_output` — displays audio player, metrics, download button, phoneme expander
 
 ### Model
 
@@ -63,7 +71,7 @@ Voices are discovered dynamically from the HuggingFace Hub (`hexgrad/Kokoro-82M`
 ### Performance
 
 - Device selection handled internally by Kokoro; `PYTORCH_ENABLE_MPS_FALLBACK=1` set via `os.environ` for Apple Silicon compatibility
-- `@st.cache_resource` to cache pipeline per language
+- `@st.cache_resource` to cache pipeline and tokenizer per language
 - `@st.cache_data(ttl=3600)` to cache voice lists (1-hour TTL)
 - `time.perf_counter()` for timing
 
