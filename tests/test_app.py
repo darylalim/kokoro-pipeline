@@ -5,11 +5,13 @@ import pytest
 import streamlit as st
 
 from streamlit_app import (
+    CHAR_LIMIT,
     HISTORY_MAX,
     LANGUAGES,
     MODEL_NAME,
     REPO_ID,
     SAMPLE_RATE,
+    SAMPLES,
     add_to_history,
     generate_speech,
     get_voices,
@@ -58,6 +60,30 @@ class TestModelConstants:
 
     def test_history_max(self) -> None:
         assert HISTORY_MAX == 20
+
+    def test_char_limit(self) -> None:
+        assert CHAR_LIMIT == 5000
+
+
+class TestSamples:
+    def test_has_all_language_codes(self) -> None:
+        assert set(SAMPLES.keys()) == EXPECTED_CODES
+
+    def test_each_language_has_three_samples(self) -> None:
+        for code, samples in SAMPLES.items():
+            assert len(samples) == 3, f"Language '{code}' should have 3 samples"
+
+    def test_samples_are_nonempty_strings(self) -> None:
+        for code, samples in SAMPLES.items():
+            for sample in samples:
+                assert isinstance(sample, str) and len(sample) > 0, (
+                    f"Empty or non-string sample in '{code}'"
+                )
+
+    def test_samples_within_char_limit(self) -> None:
+        for code, samples in SAMPLES.items():
+            for sample in samples:
+                assert len(sample) <= CHAR_LIMIT, f"Sample in '{code}' exceeds limit"
 
 
 class TestGetVoices:

@@ -1,5 +1,6 @@
 import io
 import os
+import random  # noqa: F401
 import time
 from collections.abc import Generator
 
@@ -15,6 +16,7 @@ MODEL_NAME = "Kokoro-82M"
 SAMPLE_RATE = 24000
 REPO_ID = "hexgrad/Kokoro-82M"
 HISTORY_MAX = 20
+CHAR_LIMIT = 5000
 
 LANGUAGES: dict[str, str] = {
     "American English": "a",
@@ -26,6 +28,54 @@ LANGUAGES: dict[str, str] = {
     "Japanese": "j",
     "Brazilian Portuguese": "p",
     "Mandarin Chinese": "z",
+}
+
+SAMPLES: dict[str, list[str]] = {
+    "a": [
+        "The quick brown fox jumps over the lazy dog.",
+        "She sells seashells by the seashore, and the shells she sells are seashells, I'm sure.",
+        "In a hole in the ground there lived a hobbit. Not a nasty, dirty, wet hole, but a comfortable hobbit-hole.",
+    ],
+    "b": [
+        "The rain in Spain stays mainly in the plain.",
+        "To be or not to be, that is the question.",
+        "It is a truth universally acknowledged that a single man in possession of a good fortune must be in want of a wife.",
+    ],
+    "e": [
+        "El que no arriesga, no gana.",
+        "En un lugar de la Mancha, de cuyo nombre no quiero acordarme, vivía un hidalgo.",
+        "La vida es sueño, y los sueños, sueños son.",
+    ],
+    "f": [
+        "La vie est belle quand on prend le temps de la savourer.",
+        "Tout ce qui brille n'est pas or.",
+        "Il faut imaginer Sisyphe heureux.",
+    ],
+    "h": [
+        "जहाँ चाह, वहाँ राह।",
+        "अच्छी सेहत सबसे बड़ा धन है।",
+        "बूँद बूँद से सागर भरता है।",
+    ],
+    "i": [
+        "Chi dorme non piglia pesci.",
+        "La semplicità è la sofisticazione suprema.",
+        "Tutte le strade portano a Roma.",
+    ],
+    "j": [
+        "七転び八起き。何度失敗しても、また立ち上がればいい。",
+        "花は桜木、人は武士。美しさには気高さが宿る。",
+        "猿も木から落ちる。誰にでも失敗はあるものだ。",
+    ],
+    "p": [
+        "Água mole em pedra dura, tanto bate até que fura.",
+        "A vida é feita de pequenos momentos que valem a pena ser vividos.",
+        "Quem não tem cão, caça com gato.",
+    ],
+    "z": [
+        "千里之行，始于足下。",
+        "学而不思则罔，思而不学则殆。",
+        "天下没有不散的宴席，珍惜每一次相聚。",
+    ],
 }
 
 
