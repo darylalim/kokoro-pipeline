@@ -234,6 +234,9 @@ if len(text_input) > CHAR_LIMIT:
 else:
     st.caption(f"{len(text_input)} / {CHAR_LIMIT} characters")
 
+with st.expander("Pronunciation Tips"):
+    st.markdown(PRONUNCIATION_TIPS)
+
 st.subheader("Voice")
 compare_mode = st.session_state.get("compare_mode", False)
 voice_col1, voice_col2 = st.columns(2)
