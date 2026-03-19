@@ -9,6 +9,7 @@ from streamlit_app import (
     HISTORY_MAX,
     LANGUAGES,
     MODEL_NAME,
+    PRONUNCIATION_TIPS,
     REPO_ID,
     SAMPLE_RATE,
     SAMPLES,
@@ -439,3 +440,8 @@ class TestRenderOutput:
         render_output(results)
         st.expander.assert_called_once_with("Phoneme Tokens")  # type: ignore[union-attribute]
         st.code.assert_called_once_with("hɛlˈoʊ")  # type: ignore[union-attribute]
+
+
+class TestPronunciationTips:
+    def test_is_nonempty_string(self) -> None:
+        assert isinstance(PRONUNCIATION_TIPS, str) and len(PRONUNCIATION_TIPS) > 0

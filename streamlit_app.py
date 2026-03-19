@@ -17,6 +17,15 @@ SAMPLE_RATE = 24000
 REPO_ID = "hexgrad/Kokoro-82M"
 HISTORY_MAX = 20
 CHAR_LIMIT = 5000
+PRONUNCIATION_TIPS = """\
+**Custom pronunciation:** Use `[word](/phonemes/)` syntax, e.g. `[Kokoro](/kˈOkəɹO/)`
+
+**Intonation:** Adjust with punctuation `;` `:` `,` `.` `!` `?` `—` `…` `"` `(` `)` `"` `"`
+
+**Lower stress:** `[word](-1)` or `[word](-2)`
+
+**Raise stress:** `[word](+1)` or `[word](+2)` (works best on less-stressed, usually short words)\
+"""
 
 LANGUAGES: dict[str, str] = {
     "American English": "a",
