@@ -50,7 +50,7 @@ uv run streamlit run streamlit_app.py
 
 ### Key Functions
 
-- `generate_speech` — generator yielding `(audio, phonemes)` tuples per chunk; takes `lang_code` parameter
+- `generate_speech` — generator yielding audio arrays per chunk; takes `lang_code` parameter
 - `load_pipeline` — cached global model via `mlx_audio.tts.utils.load_model` (no lang_code parameter)
 - `load_tokenizer` — cached G2P tokenizer via direct `misaki` usage per language
 - `_create_g2p` — creates language-specific misaki G2P object

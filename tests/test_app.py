@@ -6,6 +6,7 @@ import streamlit as st
 
 from streamlit_app import (
     CHAR_LIMIT,
+    ESPEAK_LANGUAGES,
     HISTORY_MAX,
     LANGUAGES,
     LONG_SAMPLES,
@@ -14,11 +15,13 @@ from streamlit_app import (
     REPO_ID,
     SAMPLE_RATE,
     SAMPLES,
+    _create_g2p,
     _wav_bytes,
     add_to_history,
     generate_speech,
     get_voices,
     load_pipeline,
+    load_tokenizer,
     render_output,
     tokenize_text,
 )
@@ -65,6 +68,23 @@ class TestModelConstants:
 
     def test_char_limit(self) -> None:
         assert CHAR_LIMIT == 5000
+
+
+class TestEspeakLanguages:
+    def test_has_all_espeak_language_codes(self) -> None:
+        assert set(ESPEAK_LANGUAGES.keys()) == {"e", "f", "h", "i", "p"}
+
+    def test_maps_to_correct_espeak_codes(self) -> None:
+        assert ESPEAK_LANGUAGES["e"] == "es"
+        assert ESPEAK_LANGUAGES["f"] == "fr-fr"
+        assert ESPEAK_LANGUAGES["h"] == "hi"
+        assert ESPEAK_LANGUAGES["i"] == "it"
+        assert ESPEAK_LANGUAGES["p"] == "pt-br"
+
+    def test_covers_non_english_non_ja_non_zh_languages(self) -> None:
+        en_ja_zh = {"a", "b", "j", "z"}
+        espeak_codes = set(LANGUAGES.values()) - en_ja_zh
+        assert set(ESPEAK_LANGUAGES.keys()) == espeak_codes
 
 
 class TestSamples:
@@ -141,6 +161,53 @@ class TestLoadPipeline:
         load_model.assert_called_with(REPO_ID)  # type: ignore[union-attribute]
 
 
+class TestCreateG2p:
+    def test_american_english_uses_en_g2p(self) -> None:
+        from misaki import en
+
+        _create_g2p("a")
+        en.G2P.assert_called()  # type: ignore[union-attribute]
+        call_kwargs = en.G2P.call_args[1]  # type: ignore[union-attribute]
+        assert call_kwargs["british"] is False
+
+    def test_british_english_uses_en_g2p_with_british(self) -> None:
+        from misaki import en
+
+        _create_g2p("b")
+        call_kwargs = en.G2P.call_args[1]  # type: ignore[union-attribute]
+        assert call_kwargs["british"] is True
+
+    def test_japanese_uses_ja_g2p(self) -> None:
+        from misaki import ja
+
+        _create_g2p("j")
+        ja.JAG2P.assert_called()  # type: ignore[union-attribute]
+
+    def test_chinese_uses_zh_g2p(self) -> None:
+        from misaki import zh
+
+        _create_g2p("z")
+        zh.ZHG2P.assert_called()  # type: ignore[union-attribute]
+
+    def test_espeak_languages_use_espeak_g2p(self) -> None:
+        from misaki import espeak
+
+        for code, espeak_lang in ESPEAK_LANGUAGES.items():
+            espeak.EspeakG2P.reset_mock()  # type: ignore[union-attribute]
+            _create_g2p(code)
+            espeak.EspeakG2P.assert_called_with(language=espeak_lang)  # type: ignore[union-attribute]
+
+
+class TestLoadTokenizer:
+    def test_returns_g2p_object(self) -> None:
+        result = load_tokenizer("a")
+        assert result is not None
+
+    def test_returns_callable(self) -> None:
+        result = load_tokenizer("a")
+        assert callable(result)
+
+
 class TestTokenizeText:
     def _mock_g2p(self, phonemes: str) -> MagicMock:
         from misaki import en
@@ -192,6 +259,7 @@ class TestTokenizeText:
     def test_japanese_uses_ja_g2p(self) -> None:
         from misaki import ja
 
+        ja.JAG2P.reset_mock()  # type: ignore[union-attribute]
         ja.JAG2P.return_value = MagicMock(return_value=("konniʧiwa", None))  # type: ignore[union-attribute]
 
         result = tokenize_text("こんにちは", "j")
