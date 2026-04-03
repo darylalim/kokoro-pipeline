@@ -36,6 +36,14 @@ LANGUAGES: dict[str, str] = {
     "Mandarin Chinese": "z",
 }
 
+ESPEAK_LANGUAGES: dict[str, str] = {
+    "e": "es",
+    "f": "fr-fr",
+    "h": "hi",
+    "i": "it",
+    "p": "pt-br",
+}
+
 SAMPLES: dict[str, list[str]] = {
     "a": [
         "The quick brown fox jumps over the lazy dog.",
@@ -278,13 +286,34 @@ def load_pipeline() -> object:
     return load_model(REPO_ID)
 
 
+def _create_g2p(lang_code: str) -> object:
+    if lang_code in ("a", "b"):
+        from misaki import en, espeak as mespeak
+
+        british = lang_code == "b"
+        fallback = mespeak.EspeakFallback(british=british)
+        return en.G2P(trf=False, british=british, fallback=fallback, unk="")
+    if lang_code == "j":
+        from misaki import ja
+
+        return ja.JAG2P()
+    if lang_code == "z":
+        from misaki import zh
+
+        return zh.ZHG2P()
+    from misaki import espeak as mespeak
+
+    return mespeak.EspeakG2P(language=ESPEAK_LANGUAGES[lang_code])
+
+
 @st.cache_resource
 def load_tokenizer(lang_code: str) -> object:
-    return KPipeline(lang_code=lang_code, model=False)
+    return _create_g2p(lang_code)
 
 
 def tokenize_text(text: str, lang_code: str) -> str:
-    return " ".join(r.phonemes for r in load_tokenizer(lang_code)(text) if r.phonemes)
+    phonemes, _ = load_tokenizer(lang_code)(text)
+    return phonemes or ""
 
 
 def generate_speech(

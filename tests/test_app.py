@@ -142,51 +142,72 @@ class TestLoadPipeline:
 
 
 class TestTokenizeText:
-    def _mock_tokenizer_pipeline(self, phoneme_chunks: list[str]) -> MagicMock:
-        results = []
-        for p in phoneme_chunks:
-            r = MagicMock()
-            r.phonemes = p
-            results.append(r)
-        from kokoro import KPipeline
+    def _mock_g2p(self, phonemes: str) -> MagicMock:
+        from misaki import en
 
-        KPipeline.return_value = MagicMock(return_value=results)  # type: ignore[union-attribute]
-        return KPipeline.return_value  # type: ignore[union-attribute]
+        mock_g2p = MagicMock(return_value=(phonemes, None))
+        en.G2P.return_value = mock_g2p
+        return mock_g2p
 
-    def test_returns_joined_phonemes(self) -> None:
-        self._mock_tokenizer_pipeline(["hɛlˈoʊ", "wˈɜːld"])
+    def test_returns_phonemes(self) -> None:
+        self._mock_g2p("hɛlˈoʊ wˈɜːld")
 
         result = tokenize_text("hello world", "a")
 
         assert result == "hɛlˈoʊ wˈɜːld"
 
-    def test_single_chunk(self) -> None:
-        self._mock_tokenizer_pipeline(["hɛlˈoʊ"])
+    def test_single_word(self) -> None:
+        self._mock_g2p("hɛlˈoʊ")
 
         result = tokenize_text("hello", "a")
 
         assert result == "hɛlˈoʊ"
 
-    def test_skips_empty_phonemes(self) -> None:
-        self._mock_tokenizer_pipeline(["hɛlˈoʊ", "", "wˈɜːld"])
-
-        result = tokenize_text("hello world", "a")
-
-        assert result == "hɛlˈoʊ wˈɜːld"
-
-    def test_returns_empty_for_no_phonemes(self) -> None:
-        self._mock_tokenizer_pipeline([])
+    def test_returns_empty_for_empty_phonemes(self) -> None:
+        self._mock_g2p("")
 
         result = tokenize_text("", "a")
 
         assert result == ""
 
-    def test_load_tokenizer_passes_model_false(self) -> None:
-        from kokoro import KPipeline
+    def test_returns_empty_for_none_phonemes(self) -> None:
+        from misaki import en
 
-        load_tokenizer("a")
+        en.G2P.return_value = MagicMock(return_value=(None, None))
 
-        KPipeline.assert_called_with(lang_code="a", model=False)  # type: ignore[union-attribute]
+        result = tokenize_text("", "a")
+
+        assert result == ""
+
+    def test_british_english_uses_british_g2p(self) -> None:
+        self._mock_g2p("hɛlˈəʊ")
+
+        tokenize_text("hello", "b")
+
+        from misaki import en
+
+        call_kwargs = en.G2P.call_args[1]
+        assert call_kwargs["british"] is True
+
+    def test_japanese_uses_ja_g2p(self) -> None:
+        from misaki import ja
+
+        ja.JAG2P.return_value = MagicMock(return_value=("konniʧiwa", None))
+
+        result = tokenize_text("こんにちは", "j")
+
+        assert result == "konniʧiwa"
+        ja.JAG2P.assert_called_once()
+
+    def test_spanish_uses_espeak_g2p(self) -> None:
+        from misaki import espeak
+
+        espeak.EspeakG2P.return_value = MagicMock(return_value=("ola", None))
+
+        result = tokenize_text("hola", "e")
+
+        assert result == "ola"
+        espeak.EspeakG2P.assert_called_with(language="es")
 
 
 class TestGenerateSpeech:
