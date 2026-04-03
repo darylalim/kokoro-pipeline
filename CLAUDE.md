@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Streamlit web app for generating multilingual speech using [Kokoro-82M-8bit](https://huggingface.co/mlx-community/Kokoro-82M-8bit), a quantized text-to-speech model optimized for Apple Silicon. Mac only.
+Streamlit web app for generating multilingual speech using [Kokoro-82M-bf16](https://huggingface.co/mlx-community/Kokoro-82M-bf16), a text-to-speech model optimized for Apple Silicon. Mac only.
 
 ## Installation
 
@@ -61,7 +61,7 @@ uv run streamlit run streamlit_app.py
 
 ### Model
 
-[Kokoro-82M-8bit](https://huggingface.co/mlx-community/Kokoro-82M-8bit) (`load_model` from `mlx_audio.tts.utils`), 82M params quantized to 8-bit. Sample rate: 24000 Hz. MLX backend for Apple Silicon.
+[Kokoro-82M-bf16](https://huggingface.co/mlx-community/Kokoro-82M-bf16) (`load_model` from `mlx_audio.tts.utils`), 82M params in bf16 precision. Sample rate: 24000 Hz. MLX backend for Apple Silicon.
 
 ### Supported Languages
 
@@ -69,7 +69,7 @@ a=American English, b=British English, e=Spanish, f=French, h=Hindi, i=Italian, 
 
 ### Voice Discovery
 
-Voices are discovered dynamically from the HuggingFace Hub (`mlx-community/Kokoro-82M-8bit`) via `huggingface_hub.list_repo_tree`. Voice files follow the naming convention `{lang}{gender}_{name}` (e.g. `af_heart` — American English, female, "heart") with `.safetensors` extension. Voices are cached per language code with `@st.cache_data`.
+Voices are discovered dynamically from the HuggingFace Hub (`mlx-community/Kokoro-82M-bf16`) via `huggingface_hub.list_repo_tree`. Voice files follow the naming convention `{lang}{gender}_{name}` (e.g. `af_heart` — American English, female, "heart") with `.safetensors` extension. Voices are cached per language code with `@st.cache_data`.
 
 ### Performance
 
@@ -102,6 +102,6 @@ Voices are discovered dynamically from the HuggingFace Hub (`mlx-community/Kokor
 
 ## Resources
 
-- [MLX Model](https://huggingface.co/mlx-community/Kokoro-82M-8bit)
+- [MLX Model](https://huggingface.co/mlx-community/Kokoro-82M-bf16)
 - [Original Model](https://github.com/hexgrad/kokoro)
 - [mlx-audio](https://github.com/Blaizzy/mlx-audio)

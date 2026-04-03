@@ -52,13 +52,13 @@ class TestLanguages:
 
 class TestModelConstants:
     def test_model_name(self) -> None:
-        assert MODEL_NAME == "Kokoro-82M-8bit"
+        assert MODEL_NAME == "Kokoro-82M-bf16"
 
     def test_sample_rate(self) -> None:
         assert SAMPLE_RATE == 24000
 
     def test_repo_id(self) -> None:
-        assert REPO_ID == "mlx-community/Kokoro-82M-8bit"
+        assert REPO_ID == "mlx-community/Kokoro-82M-bf16"
 
     def test_history_max(self) -> None:
         assert HISTORY_MAX == 20

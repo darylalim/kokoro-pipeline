@@ -10,9 +10,9 @@ import streamlit as st
 from huggingface_hub import list_repo_tree
 from mlx_audio.tts.utils import load_model
 
-MODEL_NAME = "Kokoro-82M-8bit"
+MODEL_NAME = "Kokoro-82M-bf16"
 SAMPLE_RATE = 24000
-REPO_ID = "mlx-community/Kokoro-82M-8bit"
+REPO_ID = "mlx-community/Kokoro-82M-bf16"
 HISTORY_MAX = 20
 CHAR_LIMIT = 5000
 PRONUNCIATION_TIPS = """\
