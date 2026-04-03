@@ -5,6 +5,7 @@ __pycache__/
 # Tools
 .pytest_cache/
 .ruff_cache/
+.streamlit/
 
 # macOS
 .DS_Store

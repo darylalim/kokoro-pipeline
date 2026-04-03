@@ -90,7 +90,7 @@ Voices are discovered dynamically from the HuggingFace Hub (`mlx-community/Kokor
 - Speed slider (0.5–2.0, default 1.0)
 - Four-button row: Generate (primary), Tokenize, Random Sample, Long Sample
 - Chunk-by-chunk generation progress via `st.status` (per-voice in compare mode)
-- Tokenize button: shows phoneme tokens without generating audio (uses model-free pipeline)
+- Tokenize button: shows phoneme tokens without generating audio (uses misaki G2P directly)
 - Phoneme token expander (`st.expander` + `st.code`) below audio output; shared in compare mode
 - Generated audio displayed in browser player via `st.audio`
 - WAV download via `st.download_button` (saved with `scipy.io.wavfile.write`)

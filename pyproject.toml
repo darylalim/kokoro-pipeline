@@ -1,7 +1,7 @@
 [project]
 name = "kokoro-pipeline"
-version = "0.7.0"
-description = "Streamlit web app for multilingual text-to-speech using Kokoro-82M"
+version = "0.8.0"
+description = "Streamlit web app for multilingual text-to-speech using Kokoro-82M (MLX, Mac only)"
 requires-python = ">=3.12"
 dependencies = [
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
