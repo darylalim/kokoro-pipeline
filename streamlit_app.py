@@ -323,14 +323,14 @@ def generate_speech(
     model: Any,
     speed: float = 1.0,
     lang_code: str = "a",
-) -> Generator[tuple[np.ndarray, str], None, None]:
+) -> Generator[np.ndarray, None, None]:
     generated = False
     for result in model.generate(
         text=text, voice=voice, speed=speed, lang_code=lang_code
     ):
         if result.audio is not None:
             generated = True
-            yield np.array(result.audio, dtype=np.float32), result.phonemes or ""
+            yield np.array(result.audio, dtype=np.float32)
     if not generated:
         raise ValueError("No audio generated. Check your input text.")
 
@@ -507,21 +507,17 @@ if generate_clicked:
                 start = time.perf_counter()
                 with st.status(f"Generating {v}...", expanded=True) as status:
                     audio_chunks = []
-                    phoneme_chunks = []
-                    for i, (audio_chunk, phonemes) in enumerate(
+                    for i, audio_chunk in enumerate(
                         generate_speech(
                             text_input, v, pipeline, speed=speed, lang_code=lang_code
                         ),
                         1,
                     ):
                         audio_chunks.append(audio_chunk)
-                        if phonemes:
-                            phoneme_chunks.append(phonemes)
                         st.write(f"Chunk {i}...")
                     status.update(label=f"{v} complete!", state="complete")
                 gen_time = round(time.perf_counter() - start, 2)
                 audio_array = np.concatenate(audio_chunks)
-                all_phonemes = " ".join(phoneme_chunks)
                 results.append(
                     {
                         "audio": audio_array,
@@ -530,7 +526,7 @@ if generate_clicked:
                         "speed": speed,
                         "duration": len(audio_array) / SAMPLE_RATE,
                         "generation_time": gen_time,
-                        "phonemes": all_phonemes,
+                        "phonemes": tokenize_text(text_input, lang_code),
                     }
                 )
             st.session_state["current_output"] = results

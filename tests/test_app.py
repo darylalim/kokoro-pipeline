@@ -211,26 +211,21 @@ class TestTokenizeText:
 
 
 class TestGenerateSpeech:
-    def _mock_model(
-        self, *, audio_length: int = 48000, phonemes: str = "hɛlˈoʊ"
-    ) -> MagicMock:
+    def _mock_model(self, *, audio_length: int = 48000) -> MagicMock:
         model = MagicMock()
         chunk = MagicMock()
         chunk.audio = np.random.randn(audio_length).astype(np.float32)
-        chunk.phonemes = phonemes
         model.generate.return_value = [chunk]
         return model
 
-    def test_yields_audio_and_phonemes(self) -> None:
+    def test_yields_audio(self) -> None:
         model = self._mock_model()
 
         results = list(generate_speech("hello", "af_heart", model, lang_code="a"))
 
         assert len(results) == 1
-        audio, phonemes = results[0]
-        assert isinstance(audio, np.ndarray)
-        assert audio.shape == (48000,)
-        assert phonemes == "hɛlˈoʊ"
+        assert isinstance(results[0], np.ndarray)
+        assert results[0].shape == (48000,)
 
     def test_calls_model_generate_with_correct_args(self) -> None:
         model = self._mock_model()
@@ -254,26 +249,22 @@ class TestGenerateSpeech:
         model = MagicMock()
         chunk1 = MagicMock()
         chunk1.audio = np.ones(100, dtype=np.float32)
-        chunk1.phonemes = "wˈʌn"
         chunk2 = MagicMock()
         chunk2.audio = np.zeros(200, dtype=np.float32)
-        chunk2.phonemes = "tˈuː"
         model.generate.return_value = [chunk1, chunk2]
 
         results = list(generate_speech("long text", "af_heart", model, lang_code="a"))
 
         assert len(results) == 2
-        assert results[0][0].shape == (100,)
-        assert results[1][0].shape == (200,)
-        assert results[0][1] == "wˈʌn"
-        assert results[1][1] == "tˈuː"
+        assert results[0].shape == (100,)
+        assert results[1].shape == (200,)
 
     def test_output_is_float32(self) -> None:
         model = self._mock_model()
 
         results = list(generate_speech("test", "af_heart", model, lang_code="a"))
 
-        assert results[0][0].dtype == np.float32
+        assert results[0].dtype == np.float32
 
     def test_raises_on_empty_chunks(self) -> None:
         model = MagicMock()
@@ -286,17 +277,14 @@ class TestGenerateSpeech:
         model = MagicMock()
         chunk1 = MagicMock()
         chunk1.audio = None
-        chunk1.phonemes = "skipped"
         chunk2 = MagicMock()
         chunk2.audio = np.ones(100, dtype=np.float32)
-        chunk2.phonemes = "kˈɛpt"
         model.generate.return_value = [chunk1, chunk2]
 
         results = list(generate_speech("test", "af_heart", model, lang_code="a"))
 
         assert len(results) == 1
-        assert results[0][0].shape == (100,)
-        assert results[0][1] == "kˈɛpt"
+        assert results[0].shape == (100,)
 
 
 class TestAddToHistory:
