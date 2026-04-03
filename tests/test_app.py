@@ -138,7 +138,7 @@ class TestLoadPipeline:
         from mlx_audio.tts.utils import load_model
 
         load_pipeline()
-        load_model.assert_called_with(REPO_ID)
+        load_model.assert_called_with(REPO_ID)  # type: ignore[union-attribute]
 
 
 class TestTokenizeText:
@@ -146,7 +146,7 @@ class TestTokenizeText:
         from misaki import en
 
         mock_g2p = MagicMock(return_value=(phonemes, None))
-        en.G2P.return_value = mock_g2p
+        en.G2P.return_value = mock_g2p  # type: ignore[union-attribute]
         return mock_g2p
 
     def test_returns_phonemes(self) -> None:
@@ -173,7 +173,7 @@ class TestTokenizeText:
     def test_returns_empty_for_none_phonemes(self) -> None:
         from misaki import en
 
-        en.G2P.return_value = MagicMock(return_value=(None, None))
+        en.G2P.return_value = MagicMock(return_value=(None, None))  # type: ignore[union-attribute]
 
         result = tokenize_text("", "a")
 
@@ -186,28 +186,28 @@ class TestTokenizeText:
 
         from misaki import en
 
-        call_kwargs = en.G2P.call_args[1]
+        call_kwargs = en.G2P.call_args[1]  # type: ignore[union-attribute]
         assert call_kwargs["british"] is True
 
     def test_japanese_uses_ja_g2p(self) -> None:
         from misaki import ja
 
-        ja.JAG2P.return_value = MagicMock(return_value=("konniʧiwa", None))
+        ja.JAG2P.return_value = MagicMock(return_value=("konniʧiwa", None))  # type: ignore[union-attribute]
 
         result = tokenize_text("こんにちは", "j")
 
         assert result == "konniʧiwa"
-        ja.JAG2P.assert_called_once()
+        ja.JAG2P.assert_called_once()  # type: ignore[union-attribute]
 
     def test_spanish_uses_espeak_g2p(self) -> None:
         from misaki import espeak
 
-        espeak.EspeakG2P.return_value = MagicMock(return_value=("ola", None))
+        espeak.EspeakG2P.return_value = MagicMock(return_value=("ola", None))  # type: ignore[union-attribute]
 
         result = tokenize_text("hola", "e")
 
         assert result == "ola"
-        espeak.EspeakG2P.assert_called_with(language="es")
+        espeak.EspeakG2P.assert_called_with(language="es")  # type: ignore[union-attribute]
 
 
 class TestGenerateSpeech:

@@ -2,6 +2,7 @@ import io
 import random
 import time
 from collections.abc import Generator
+from typing import Any
 
 import numpy as np
 import scipy.io.wavfile as wavfile
@@ -282,11 +283,11 @@ def get_voices(lang_code: str) -> list[str]:
 
 
 @st.cache_resource
-def load_pipeline() -> object:
-    return load_model(REPO_ID)
+def load_pipeline() -> Any:
+    return load_model(REPO_ID)  # type: ignore[arg-type]
 
 
-def _create_g2p(lang_code: str) -> object:
+def _create_g2p(lang_code: str) -> Any:
     if lang_code in ("a", "b"):
         from misaki import en, espeak as mespeak
 
@@ -307,7 +308,7 @@ def _create_g2p(lang_code: str) -> object:
 
 
 @st.cache_resource
-def load_tokenizer(lang_code: str) -> object:
+def load_tokenizer(lang_code: str) -> Any:
     return _create_g2p(lang_code)
 
 
@@ -319,12 +320,14 @@ def tokenize_text(text: str, lang_code: str) -> str:
 def generate_speech(
     text: str,
     voice: str,
-    model: object,
+    model: Any,
     speed: float = 1.0,
     lang_code: str = "a",
 ) -> Generator[tuple[np.ndarray, str], None, None]:
     generated = False
-    for result in model.generate(text=text, voice=voice, speed=speed, lang_code=lang_code):
+    for result in model.generate(
+        text=text, voice=voice, speed=speed, lang_code=lang_code
+    ):
         if result.audio is not None:
             generated = True
             yield np.array(result.audio, dtype=np.float32), result.phonemes or ""
@@ -506,7 +509,10 @@ if generate_clicked:
                     audio_chunks = []
                     phoneme_chunks = []
                     for i, (audio_chunk, phonemes) in enumerate(
-                        generate_speech(text_input, v, pipeline, speed=speed, lang_code=lang_code), 1
+                        generate_speech(
+                            text_input, v, pipeline, speed=speed, lang_code=lang_code
+                        ),
+                        1,
                     ):
                         audio_chunks.append(audio_chunk)
                         if phonemes:
