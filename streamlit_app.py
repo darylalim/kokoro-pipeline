@@ -1,20 +1,17 @@
 import io
-import os
 import random
 import time
 from collections.abc import Generator
-
-os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
 import numpy as np
 import scipy.io.wavfile as wavfile
 import streamlit as st
 from huggingface_hub import list_repo_tree
-from kokoro import KPipeline
+from mlx_audio.tts.utils import load_model
 
-MODEL_NAME = "Kokoro-82M"
+MODEL_NAME = "Kokoro-82M-8bit"
 SAMPLE_RATE = 24000
-REPO_ID = "hexgrad/Kokoro-82M"
+REPO_ID = "mlx-community/Kokoro-82M-8bit"
 HISTORY_MAX = 20
 CHAR_LIMIT = 5000
 PRONUNCIATION_TIPS = """\
@@ -270,19 +267,19 @@ def get_voices(lang_code: str) -> list[str]:
         for entry in list_repo_tree(REPO_ID, path_in_repo="voices")
         if (name := getattr(entry, "rfilename", ""))
         and name.startswith("voices/")
-        and name.endswith(".pt")
-        and len(voice := name.removeprefix("voices/").removesuffix(".pt")) >= 2
+        and name.endswith(".safetensors")
+        and len(voice := name.removeprefix("voices/").removesuffix(".safetensors")) >= 2
         and voice[0] == lang_code
     )
 
 
 @st.cache_resource
-def load_pipeline(lang_code: str) -> KPipeline:
-    return KPipeline(lang_code=lang_code, repo_id=REPO_ID)
+def load_pipeline() -> object:
+    return load_model(REPO_ID)
 
 
 @st.cache_resource
-def load_tokenizer(lang_code: str) -> KPipeline:
+def load_tokenizer(lang_code: str) -> object:
     return KPipeline(lang_code=lang_code, model=False)
 
 
@@ -293,7 +290,7 @@ def tokenize_text(text: str, lang_code: str) -> str:
 def generate_speech(
     text: str,
     voice: str,
-    pipeline: KPipeline,
+    pipeline: object,
     speed: float = 1.0,
 ) -> Generator[tuple[np.ndarray, str], None, None]:
     generated = False
@@ -447,7 +444,7 @@ speed = st.slider(
 )
 
 with st.spinner("Loading model..."):
-    pipeline = load_pipeline(lang_code)
+    pipeline = load_pipeline()
 
 btn_col1, btn_col2, btn_col3, btn_col4 = st.columns(4)
 with btn_col1:

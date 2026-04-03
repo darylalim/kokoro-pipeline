@@ -19,7 +19,6 @@ from streamlit_app import (
     generate_speech,
     get_voices,
     load_pipeline,
-    load_tokenizer,
     render_output,
     tokenize_text,
 )
@@ -53,13 +52,13 @@ class TestLanguages:
 
 class TestModelConstants:
     def test_model_name(self) -> None:
-        assert MODEL_NAME == "Kokoro-82M"
+        assert MODEL_NAME == "Kokoro-82M-8bit"
 
     def test_sample_rate(self) -> None:
         assert SAMPLE_RATE == 24000
 
     def test_repo_id(self) -> None:
-        assert REPO_ID == "hexgrad/Kokoro-82M"
+        assert REPO_ID == "mlx-community/Kokoro-82M-8bit"
 
     def test_history_max(self) -> None:
         assert HISTORY_MAX == 20
@@ -132,14 +131,14 @@ class TestGetVoices:
 
 class TestLoadPipeline:
     def test_returns_pipeline(self) -> None:
-        pipeline = load_pipeline("a")
+        pipeline = load_pipeline()
         assert pipeline is not None
 
-    def test_called_with_lang_code(self) -> None:
-        from kokoro import KPipeline
+    def test_called_with_repo_id(self) -> None:
+        from mlx_audio.tts.utils import load_model
 
-        load_pipeline("a")
-        KPipeline.assert_called_with(lang_code="a", repo_id=REPO_ID)  # type: ignore[union-attribute]
+        load_pipeline()
+        load_model.assert_called_with(REPO_ID)
 
 
 class TestTokenizeText:
