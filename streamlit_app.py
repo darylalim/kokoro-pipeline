@@ -503,6 +503,7 @@ if generate_clicked:
     else:
         try:
             results = []
+            phonemes = tokenize_text(text_input, lang_code)
             for v in selected_voices:
                 start = time.perf_counter()
                 with st.status(f"Generating {v}...", expanded=True) as status:
@@ -526,7 +527,7 @@ if generate_clicked:
                         "speed": speed,
                         "duration": len(audio_array) / SAMPLE_RATE,
                         "generation_time": gen_time,
-                        "phonemes": tokenize_text(text_input, lang_code),
+                        "phonemes": phonemes,
                     }
                 )
             st.session_state["current_output"] = results

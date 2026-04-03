@@ -1,5 +1,7 @@
 # Kokoro-82M-8bit Migration Plan
 
+> **Implementation note:** The final implementation uses `Kokoro-82M-bf16` instead of `Kokoro-82M-8bit` due to a shape mismatch bug in mlx-audio's sanitize function ([Blaizzy/mlx-audio#623](https://github.com/Blaizzy/mlx-audio/issues/623)). Additionally, `generate_speech` yields audio arrays only (not tuples) because mlx-audio's `GenerationResult` lacks a `phonemes` attribute; phonemes are obtained via `tokenize_text` separately.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Migrate the TTS pipeline from `kokoro` + PyTorch to `mlx-audio` + MLX, using the quantized `mlx-community/Kokoro-82M-8bit` model for Apple Silicon Macs.
