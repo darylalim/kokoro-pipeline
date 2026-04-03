@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Streamlit web app for generating multilingual speech using [Kokoro-82M](https://github.com/hexgrad/kokoro), a lightweight text-to-speech model by [Hexgrad](https://github.com/hexgrad).
+Streamlit web app for generating multilingual speech using [Kokoro-82M-8bit](https://huggingface.co/mlx-community/Kokoro-82M-8bit), a quantized text-to-speech model optimized for Apple Silicon. Mac only.
 
 ## Installation
 
@@ -32,7 +32,7 @@ uv run streamlit run streamlit_app.py
 
 **System:** `espeak-ng`
 
-**Runtime:** `en-core-web-sm` (pinned URL; update wheel URL if spaCy is upgraded), `kokoro>=0.9.4`, `misaki[ja]`, `misaki[zh]`, `numpy`, `soundfile`, `streamlit`, `scipy`, `torch`
+**Runtime:** `en-core-web-sm` (pinned URL; update wheel URL if spaCy is upgraded), `misaki[ja]`, `misaki[zh]`, `mlx-audio`, `numpy`, `soundfile`, `streamlit`, `scipy`
 
 **Dev:** `ruff`, `ty`, `pytest`
 
@@ -45,21 +45,23 @@ uv run streamlit run streamlit_app.py
 ### Files
 
 - `streamlit_app.py` — single-file app: text input, language/voice selection, speed control, audio playback, voice comparison, phoneme tokenization, sample texts, long samples, character limit, pronunciation tips, session-based generation history
-- `tests/conftest.py` — mocks `streamlit`, `kokoro`, and `huggingface_hub` for import
+- `tests/conftest.py` — mocks `streamlit`, `mlx_audio`, `misaki`, and `huggingface_hub` for import
 - `tests/test_app.py` — unit tests
 
 ### Key Functions
 
-- `generate_speech` — generator yielding `(audio, phonemes)` tuples per chunk
-- `load_pipeline` / `load_tokenizer` — cached pipeline (with model) and tokenizer (model-free)
-- `tokenize_text` — returns joined phoneme string without running inference
+- `generate_speech` — generator yielding `(audio, phonemes)` tuples per chunk; takes `lang_code` parameter
+- `load_pipeline` — cached global model via `mlx_audio.tts.utils.load_model` (no lang_code parameter)
+- `load_tokenizer` — cached G2P tokenizer via direct `misaki` usage per language
+- `_create_g2p` — creates language-specific misaki G2P object
+- `tokenize_text` — returns phoneme string without running inference
 - `add_to_history` — manages generation history (max 20 entries, newest first)
 - `_wav_bytes` — converts a NumPy audio array to WAV bytes
 - `render_output` — displays audio player, metrics, download button, phoneme expander
 
 ### Model
 
-[Kokoro-82M](https://github.com/hexgrad/kokoro) (`KPipeline` from `kokoro` package), 82M params. Sample rate: 24000 Hz. `repo_id` is passed explicitly to suppress default warnings.
+[Kokoro-82M-8bit](https://huggingface.co/mlx-community/Kokoro-82M-8bit) (`load_model` from `mlx_audio.tts.utils`), 82M params quantized to 8-bit. Sample rate: 24000 Hz. MLX backend for Apple Silicon.
 
 ### Supported Languages
 
@@ -67,12 +69,12 @@ a=American English, b=British English, e=Spanish, f=French, h=Hindi, i=Italian, 
 
 ### Voice Discovery
 
-Voices are discovered dynamically from the HuggingFace Hub (`hexgrad/Kokoro-82M`) via `huggingface_hub.list_repo_tree`. Voice files follow the naming convention `{lang}{gender}_{name}` (e.g. `af_heart` — American English, female, "heart"). Voices are cached per language code with `@st.cache_data`.
+Voices are discovered dynamically from the HuggingFace Hub (`mlx-community/Kokoro-82M-8bit`) via `huggingface_hub.list_repo_tree`. Voice files follow the naming convention `{lang}{gender}_{name}` (e.g. `af_heart` — American English, female, "heart") with `.safetensors` extension. Voices are cached per language code with `@st.cache_data`.
 
 ### Performance
 
-- Device selection handled internally by Kokoro; `PYTORCH_ENABLE_MPS_FALLBACK=1` set via `os.environ` for Apple Silicon compatibility
-- `@st.cache_resource` to cache pipeline and tokenizer per language
+- MLX backend runs natively on Apple Silicon (no PyTorch or MPS fallback needed)
+- `@st.cache_resource` to cache model globally and tokenizers per language
 - `@st.cache_data(ttl=3600)` to cache voice lists (1-hour TTL)
 - `time.perf_counter()` for timing
 
@@ -100,6 +102,6 @@ Voices are discovered dynamically from the HuggingFace Hub (`hexgrad/Kokoro-82M`
 
 ## Resources
 
-- [GitHub Repo](https://github.com/hexgrad/kokoro)
-- [Hugging Face](https://huggingface.co/hexgrad/Kokoro-82M)
-- [PyPI](https://pypi.org/project/kokoro/)
+- [MLX Model](https://huggingface.co/mlx-community/Kokoro-82M-8bit)
+- [Original Model](https://github.com/hexgrad/kokoro)
+- [mlx-audio](https://github.com/Blaizzy/mlx-audio)
