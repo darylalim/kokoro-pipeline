@@ -211,28 +211,20 @@ class TestTokenizeText:
 
 
 class TestGenerateSpeech:
-    def _mock_tensor(self, data: np.ndarray) -> MagicMock:
-        tensor = MagicMock()
-        tensor.cpu.return_value = tensor
-        tensor.numpy.return_value = data
-        return tensor
-
-    def _mock_pipeline(
+    def _mock_model(
         self, *, audio_length: int = 48000, phonemes: str = "hɛlˈoʊ"
     ) -> MagicMock:
-        pipeline = MagicMock()
+        model = MagicMock()
         chunk = MagicMock()
-        chunk.audio = self._mock_tensor(
-            np.random.randn(audio_length).astype(np.float32)
-        )
+        chunk.audio = np.random.randn(audio_length).astype(np.float32)
         chunk.phonemes = phonemes
-        pipeline.return_value = [chunk]
-        return pipeline
+        model.generate.return_value = [chunk]
+        return model
 
     def test_yields_audio_and_phonemes(self) -> None:
-        pipeline = self._mock_pipeline()
+        model = self._mock_model()
 
-        results = list(generate_speech("hello", "af_heart", pipeline))
+        results = list(generate_speech("hello", "af_heart", model, lang_code="a"))
 
         assert len(results) == 1
         audio, phonemes = results[0]
@@ -240,31 +232,35 @@ class TestGenerateSpeech:
         assert audio.shape == (48000,)
         assert phonemes == "hɛlˈoʊ"
 
-    def test_calls_pipeline_with_correct_args(self) -> None:
-        pipeline = self._mock_pipeline()
+    def test_calls_model_generate_with_correct_args(self) -> None:
+        model = self._mock_model()
 
-        list(generate_speech("test text", "af_heart", pipeline, speed=1.5))
+        list(generate_speech("test text", "af_heart", model, speed=1.5, lang_code="b"))
 
-        pipeline.assert_called_once_with("test text", voice="af_heart", speed=1.5)
+        model.generate.assert_called_once_with(
+            text="test text", voice="af_heart", speed=1.5, lang_code="b"
+        )
 
-    def test_default_speed(self) -> None:
-        pipeline = self._mock_pipeline()
+    def test_default_speed_and_lang_code(self) -> None:
+        model = self._mock_model()
 
-        list(generate_speech("test", "af_heart", pipeline))
+        list(generate_speech("test", "af_heart", model))
 
-        pipeline.assert_called_once_with("test", voice="af_heart", speed=1.0)
+        model.generate.assert_called_once_with(
+            text="test", voice="af_heart", speed=1.0, lang_code="a"
+        )
 
     def test_yields_multiple_chunks(self) -> None:
-        pipeline = MagicMock()
+        model = MagicMock()
         chunk1 = MagicMock()
-        chunk1.audio = self._mock_tensor(np.ones(100, dtype=np.float32))
+        chunk1.audio = np.ones(100, dtype=np.float32)
         chunk1.phonemes = "wˈʌn"
         chunk2 = MagicMock()
-        chunk2.audio = self._mock_tensor(np.zeros(200, dtype=np.float32))
+        chunk2.audio = np.zeros(200, dtype=np.float32)
         chunk2.phonemes = "tˈuː"
-        pipeline.return_value = [chunk1, chunk2]
+        model.generate.return_value = [chunk1, chunk2]
 
-        results = list(generate_speech("long text", "af_heart", pipeline))
+        results = list(generate_speech("long text", "af_heart", model, lang_code="a"))
 
         assert len(results) == 2
         assert results[0][0].shape == (100,)
@@ -273,30 +269,30 @@ class TestGenerateSpeech:
         assert results[1][1] == "tˈuː"
 
     def test_output_is_float32(self) -> None:
-        pipeline = self._mock_pipeline()
+        model = self._mock_model()
 
-        results = list(generate_speech("test", "af_heart", pipeline))
+        results = list(generate_speech("test", "af_heart", model, lang_code="a"))
 
         assert results[0][0].dtype == np.float32
 
     def test_raises_on_empty_chunks(self) -> None:
-        pipeline = MagicMock()
-        pipeline.return_value = []
+        model = MagicMock()
+        model.generate.return_value = []
 
         with pytest.raises(ValueError, match="No audio generated"):
-            list(generate_speech("test", "af_heart", pipeline))
+            list(generate_speech("test", "af_heart", model, lang_code="a"))
 
     def test_skips_chunks_with_none_audio(self) -> None:
-        pipeline = MagicMock()
+        model = MagicMock()
         chunk1 = MagicMock()
         chunk1.audio = None
         chunk1.phonemes = "skipped"
         chunk2 = MagicMock()
-        chunk2.audio = self._mock_tensor(np.ones(100, dtype=np.float32))
+        chunk2.audio = np.ones(100, dtype=np.float32)
         chunk2.phonemes = "kˈɛpt"
-        pipeline.return_value = [chunk1, chunk2]
+        model.generate.return_value = [chunk1, chunk2]
 
-        results = list(generate_speech("test", "af_heart", pipeline))
+        results = list(generate_speech("test", "af_heart", model, lang_code="a"))
 
         assert len(results) == 1
         assert results[0][0].shape == (100,)

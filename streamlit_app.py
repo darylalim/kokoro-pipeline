@@ -319,14 +319,15 @@ def tokenize_text(text: str, lang_code: str) -> str:
 def generate_speech(
     text: str,
     voice: str,
-    pipeline: object,
+    model: object,
     speed: float = 1.0,
+    lang_code: str = "a",
 ) -> Generator[tuple[np.ndarray, str], None, None]:
     generated = False
-    for result in pipeline(text, voice=voice, speed=speed):
+    for result in model.generate(text=text, voice=voice, speed=speed, lang_code=lang_code):
         if result.audio is not None:
             generated = True
-            yield result.audio.cpu().numpy().astype(np.float32), result.phonemes or ""
+            yield np.array(result.audio, dtype=np.float32), result.phonemes or ""
     if not generated:
         raise ValueError("No audio generated. Check your input text.")
 
@@ -505,7 +506,7 @@ if generate_clicked:
                     audio_chunks = []
                     phoneme_chunks = []
                     for i, (audio_chunk, phonemes) in enumerate(
-                        generate_speech(text_input, v, pipeline, speed=speed), 1
+                        generate_speech(text_input, v, pipeline, speed=speed, lang_code=lang_code), 1
                     ):
                         audio_chunks.append(audio_chunk)
                         if phonemes:
