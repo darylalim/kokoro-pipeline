@@ -9,12 +9,10 @@ from streamlit_app import (
     ESPEAK_LANGUAGES,
     HISTORY_MAX,
     LANGUAGES,
-    LONG_SAMPLES,
     MODEL_NAME,
     PRONUNCIATION_TIPS,
     REPO_ID,
     SAMPLE_RATE,
-    SAMPLES,
     _create_g2p,
     _wav_bytes,
     add_to_history,
@@ -85,37 +83,6 @@ class TestEspeakLanguages:
         en_ja_zh = {"a", "b", "j", "z"}
         espeak_codes = set(LANGUAGES.values()) - en_ja_zh
         assert set(ESPEAK_LANGUAGES.keys()) == espeak_codes
-
-
-class TestSamples:
-    def test_has_all_language_codes(self) -> None:
-        assert set(SAMPLES.keys()) == EXPECTED_CODES
-
-    def test_each_language_has_three_samples(self) -> None:
-        for code, samples in SAMPLES.items():
-            assert len(samples) == 3, f"Language '{code}' should have 3 samples"
-
-    def test_samples_are_nonempty_strings(self) -> None:
-        for code, samples in SAMPLES.items():
-            for sample in samples:
-                assert isinstance(sample, str) and len(sample) > 0, (
-                    f"Empty or non-string sample in '{code}'"
-                )
-
-    def test_samples_within_char_limit(self) -> None:
-        for code, samples in SAMPLES.items():
-            for sample in samples:
-                assert len(sample) <= CHAR_LIMIT, f"Sample in '{code}' exceeds limit"
-
-    def test_samples_keys_match_language_values(self) -> None:
-        assert set(SAMPLES.keys()) == set(LANGUAGES.values())
-
-    def test_samples_have_no_leading_trailing_whitespace(self) -> None:
-        for code, samples in SAMPLES.items():
-            for sample in samples:
-                assert sample == sample.strip(), (
-                    f"Sample in '{code}' has leading/trailing whitespace"
-                )
 
 
 class TestGetVoices:
@@ -558,38 +525,3 @@ class TestPronunciationTips:
 
     def test_no_leading_trailing_whitespace(self) -> None:
         assert PRONUNCIATION_TIPS == PRONUNCIATION_TIPS.strip()
-
-
-class TestLongSamples:
-    def test_has_all_language_codes(self) -> None:
-        assert set(LONG_SAMPLES.keys()) == set(LANGUAGES.values())
-
-    def test_each_value_is_nonempty_string(self) -> None:
-        for code, sample in LONG_SAMPLES.items():
-            assert isinstance(sample, str) and len(sample) > 0, (
-                f"Empty or non-string sample in '{code}'"
-            )
-
-    def test_values_are_strings_not_lists(self) -> None:
-        for code, sample in LONG_SAMPLES.items():
-            assert isinstance(sample, str), (
-                f"LONG_SAMPLES['{code}'] should be a string, not {type(sample)}"
-            )
-
-    def test_within_char_limit(self) -> None:
-        for code, sample in LONG_SAMPLES.items():
-            assert len(sample) <= CHAR_LIMIT, (
-                f"Long sample in '{code}' exceeds {CHAR_LIMIT} chars"
-            )
-
-    def test_minimum_length(self) -> None:
-        for code, sample in LONG_SAMPLES.items():
-            assert len(sample) >= 300, (
-                f"Long sample in '{code}' is under 300 chars ({len(sample)})"
-            )
-
-    def test_no_leading_trailing_whitespace(self) -> None:
-        for code, sample in LONG_SAMPLES.items():
-            assert sample == sample.strip(), (
-                f"Long sample in '{code}' has leading/trailing whitespace"
-            )
