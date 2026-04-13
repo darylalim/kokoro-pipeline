@@ -116,6 +116,14 @@ def _wav_bytes(audio: np.ndarray) -> bytes:
     return buf.getvalue()
 
 
+def _validate_input(text: str) -> str | None:
+    if not text.strip():
+        return "Enter text."
+    if len(text) > CHAR_LIMIT:
+        return f"Text exceeds {CHAR_LIMIT} character limit."
+    return None
+
+
 def render_output(results: list[dict[str, object]]) -> None:
     if not results:
         return
@@ -153,7 +161,7 @@ def render_output(results: list[dict[str, object]]) -> None:
             mime="audio/wav",
         )
     with st.expander("Phoneme Tokens"):
-        st.code(results[0].get("phonemes", ""))
+        st.code(results[0]["phonemes"])
 
 
 st.session_state.setdefault("current_output", None)
@@ -170,10 +178,7 @@ text_input = st.text_area(
     key="text_input",
 )
 if len(text_input) > CHAR_LIMIT:
-    st.caption(
-        f'<span style="color: red">{len(text_input)} / {CHAR_LIMIT} characters</span>',
-        unsafe_allow_html=True,
-    )
+    st.caption(f":red[{len(text_input)} / {CHAR_LIMIT} characters]")
 else:
     st.caption(f"{len(text_input)} / {CHAR_LIMIT} characters")
 
@@ -232,10 +237,9 @@ with btn_col2:
     tokenize_clicked = st.button("Tokenize")
 
 if generate_clicked:
-    if not text_input.strip():
-        st.warning("Enter text.")
-    elif len(text_input) > CHAR_LIMIT:
-        st.warning(f"Text exceeds {CHAR_LIMIT} character limit.")
+    warning = _validate_input(text_input)
+    if warning:
+        st.warning(warning)
     elif compare_mode and not selected_voices:
         st.warning("Select at least one voice.")
     else:
@@ -262,7 +266,6 @@ if generate_clicked:
                         "audio": audio_array,
                         "voice": v,
                         "text": text_input,
-                        "speed": speed,
                         "duration": len(audio_array) / SAMPLE_RATE,
                         "generation_time": gen_time,
                         "phonemes": phonemes,
@@ -274,10 +277,9 @@ if generate_clicked:
             st.exception(e)
 
 if tokenize_clicked:
-    if not text_input.strip():
-        st.warning("Enter text.")
-    elif len(text_input) > CHAR_LIMIT:
-        st.warning(f"Text exceeds {CHAR_LIMIT} character limit.")
+    warning = _validate_input(text_input)
+    if warning:
+        st.warning(warning)
     else:
         phonemes = tokenize_text(text_input, lang_code)
         with st.expander("Phoneme Tokens", expanded=True):

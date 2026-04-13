@@ -13,6 +13,7 @@ from streamlit_app import (
     REPO_ID,
     SAMPLE_RATE,
     _create_g2p,
+    _validate_input,
     _wav_bytes,
     generate_speech,
     get_voices,
@@ -343,6 +344,25 @@ class TestWavBytes:
         assert rate == SAMPLE_RATE
 
 
+class TestValidateInput:
+    def test_empty_string(self) -> None:
+        assert _validate_input("") == "Enter text."
+
+    def test_whitespace_only(self) -> None:
+        assert _validate_input("   \n\t") == "Enter text."
+
+    def test_within_limit(self) -> None:
+        assert _validate_input("hello") is None
+
+    def test_exactly_at_limit(self) -> None:
+        assert _validate_input("x" * CHAR_LIMIT) is None
+
+    def test_over_limit(self) -> None:
+        assert _validate_input("x" * (CHAR_LIMIT + 1)) == (
+            f"Text exceeds {CHAR_LIMIT} character limit."
+        )
+
+
 class TestRenderOutput:
     @staticmethod
     def _make_result(
@@ -352,7 +372,6 @@ class TestRenderOutput:
             "audio": np.ones(24000, dtype=np.float32),
             "voice": voice,
             "text": text,
-            "speed": 1.0,
             "duration": 1.0,
             "generation_time": 0.5,
             "phonemes": phonemes,
