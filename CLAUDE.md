@@ -44,7 +44,7 @@ uv run streamlit run streamlit_app.py
 
 ### Files
 
-- `streamlit_app.py` — single-file app: text input, language/voice selection, speed control, audio playback, voice comparison, phoneme tokenization, sample texts, long samples, character limit, pronunciation tips, session-based generation history
+- `streamlit_app.py` — single-file app: text input, language/voice selection, speed control, audio playback, voice comparison, phoneme tokenization, character limit, pronunciation tips
 - `tests/conftest.py` — mocks `streamlit`, `mlx_audio`, `misaki`, and `huggingface_hub` for import
 - `tests/test_app.py` — unit tests
 
@@ -55,7 +55,6 @@ uv run streamlit run streamlit_app.py
 - `load_tokenizer` — cached G2P tokenizer via direct `misaki` usage per language
 - `_create_g2p` — creates language-specific misaki G2P object
 - `tokenize_text` — returns phoneme string without running inference
-- `add_to_history` — manages generation history (max 20 entries, newest first)
 - `_wav_bytes` — converts a NumPy audio array to WAV bytes
 - `render_output` — displays audio player, metrics, download button, phoneme expander
 
@@ -81,14 +80,12 @@ Voices are discovered dynamically from the HuggingFace Hub (`mlx-community/Kokor
 ### UI
 
 - Text input with 5000-character limit (`CHAR_LIMIT`), live character count (red when exceeded)
-- Random Sample button: populates text area with a language-aware sample from `SAMPLES` dict via session state wiring
-- Long Sample button: populates text area with a literary excerpt from `LONG_SAMPLES` dict via session state wiring
 - Pronunciation Tips expander: collapsed by default, shows Kokoro pronunciation syntax (`PRONUNCIATION_TIPS` constant)
 - Language selection (9 languages via `LANGUAGES` dict)
 - Voice selector (dynamically populated from HuggingFace Hub)
 - Compare Voices toggle: switches voice selector to multiselect (max 3 voices)
 - Speed slider (0.5–2.0, default 1.0)
-- Four-button row: Generate (primary), Tokenize, Random Sample, Long Sample
+- Two-button row: Generate (primary), Tokenize
 - Chunk-by-chunk generation progress via `st.status` (per-voice in compare mode)
 - Tokenize button: shows phoneme tokens without generating audio (uses misaki G2P directly)
 - Phoneme token expander (`st.expander` + `st.code`) below audio output; shared in compare mode
@@ -97,8 +94,7 @@ Voices are discovered dynamically from the HuggingFace Hub (`mlx-community/Kokor
 - Metrics via `st.metric`: model name, input characters, output duration, generation time
 - Compare mode: shared Model + Input Characters metrics, per-voice Duration + Generation Time
 - Errors shown with `st.exception()`
-- Session state (`st.session_state`) persists current output and generation history across reruns
-- Sidebar generation history (max 20 entries, newest first) with Load buttons
+- Session state (`st.session_state`) persists current output across reruns
 
 ## Resources
 
