@@ -12,7 +12,6 @@ from mlx_audio.tts.utils import load_model
 MODEL_NAME = "Kokoro-82M-bf16"
 SAMPLE_RATE = 24000
 REPO_ID = "mlx-community/Kokoro-82M-bf16"
-HISTORY_MAX = 20
 CHAR_LIMIT = 5000
 PRONUNCIATION_TIPS = """\
 **Custom pronunciation:** Use `[word](/phonemes/)` syntax, e.g. `[Kokoro](/kˈOkəɹO/)`
@@ -111,16 +110,6 @@ def generate_speech(
         raise ValueError("No audio generated. Check your input text.")
 
 
-def add_to_history(
-    history: list[list[dict[str, object]]],
-    entry: list[dict[str, object]],
-    max_entries: int = HISTORY_MAX,
-) -> None:
-    history.insert(0, entry)
-    if len(history) > max_entries:
-        history.pop()
-
-
 def _wav_bytes(audio: np.ndarray) -> bytes:
     buf = io.BytesIO()
     wavfile.write(buf, SAMPLE_RATE, audio)
@@ -168,23 +157,6 @@ def render_output(results: list[dict[str, object]]) -> None:
 
 
 st.session_state.setdefault("current_output", None)
-st.session_state.setdefault("history", [])
-
-with st.sidebar:
-    st.header("Generation History")
-    history = st.session_state["history"]
-    if not history:
-        st.caption("No generations yet.")
-    for i, entry in enumerate(history):
-        text = str(entry[0]["text"])
-        text_preview = text[:50] + ("..." if len(text) > 50 else "")
-        voice_names = ", ".join(str(r["voice"]) for r in entry)
-        st.markdown(f"**{text_preview}**")
-        st.caption(voice_names)
-        for result in entry:
-            st.audio(np.asarray(result["audio"]), sample_rate=SAMPLE_RATE)
-        if st.button("Load", key=f"load_{i}"):
-            st.session_state["current_output"] = entry
 
 st.title("Text to Speech Pipeline")
 st.write("Generate multilingual speech with Kokoro.")
@@ -297,7 +269,6 @@ if generate_clicked:
                     }
                 )
             st.session_state["current_output"] = results
-            add_to_history(st.session_state["history"], results)
             st.rerun()
         except Exception as e:
             st.exception(e)

@@ -7,7 +7,6 @@ import streamlit as st
 from streamlit_app import (
     CHAR_LIMIT,
     ESPEAK_LANGUAGES,
-    HISTORY_MAX,
     LANGUAGES,
     MODEL_NAME,
     PRONUNCIATION_TIPS,
@@ -15,7 +14,6 @@ from streamlit_app import (
     SAMPLE_RATE,
     _create_g2p,
     _wav_bytes,
-    add_to_history,
     generate_speech,
     get_voices,
     load_pipeline,
@@ -60,9 +58,6 @@ class TestModelConstants:
 
     def test_repo_id(self) -> None:
         assert REPO_ID == "mlx-community/Kokoro-82M-bf16"
-
-    def test_history_max(self) -> None:
-        assert HISTORY_MAX == 20
 
     def test_char_limit(self) -> None:
         assert CHAR_LIMIT == 5000
@@ -320,59 +315,6 @@ class TestGenerateSpeech:
 
         assert len(results) == 1
         assert results[0].shape == (100,)
-
-
-class TestAddToHistory:
-    def test_adds_entry_to_empty_history(self) -> None:
-        history: list[list[dict[str, object]]] = []
-        entry: list[dict[str, object]] = [{"voice": "af_heart", "text": "hello"}]
-        add_to_history(history, entry)
-        assert len(history) == 1
-        assert history[0] is entry
-
-    def test_newest_first(self) -> None:
-        old: list[dict[str, object]] = [{"voice": "af_bella"}]
-        history: list[list[dict[str, object]]] = [old]
-        new: list[dict[str, object]] = [{"voice": "af_heart"}]
-        add_to_history(history, new)
-        assert history[0] is new
-        assert history[1] is old
-
-    def test_caps_at_max_entries(self) -> None:
-        history: list[list[dict[str, object]]] = [
-            [{"voice": f"v{i}"}] for i in range(20)
-        ]
-        new: list[dict[str, object]] = [{"voice": "new"}]
-        add_to_history(history, new, max_entries=20)
-        assert len(history) == 20
-
-    def test_drops_oldest_when_full(self) -> None:
-        history: list[list[dict[str, object]]] = [
-            [{"voice": f"v{i}"}] for i in range(20)
-        ]
-        oldest = history[-1]
-        new: list[dict[str, object]] = [{"voice": "new"}]
-        add_to_history(history, new, max_entries=20)
-        assert oldest not in history
-        assert history[0] is new
-
-    def test_custom_max_entries(self) -> None:
-        history: list[list[dict[str, object]]] = [
-            [{"voice": f"v{i}"}] for i in range(3)
-        ]
-        new: list[dict[str, object]] = [{"voice": "new"}]
-        add_to_history(history, new, max_entries=3)
-        assert len(history) == 3
-        assert history[0] is new
-
-    def test_default_max_uses_history_max(self) -> None:
-        history: list[list[dict[str, object]]] = [
-            [{"voice": f"v{i}"}] for i in range(HISTORY_MAX)
-        ]
-        new: list[dict[str, object]] = [{"voice": "new"}]
-        add_to_history(history, new)
-        assert len(history) == HISTORY_MAX
-        assert history[0] is new
 
 
 class TestWavBytes:
