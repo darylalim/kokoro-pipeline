@@ -99,7 +99,7 @@ def _format_voice(voice: str) -> str:
     if "_" not in voice:
         return voice
     name = voice.split("_", 1)[1].replace("_", " ").title()
-    gender = _VOICE_GENDERS.get(voice[1], "") if len(voice) >= 2 else ""
+    gender = _VOICE_GENDERS.get(voice[1], "")
     return f"{name} ({gender})" if gender else name
 
 
