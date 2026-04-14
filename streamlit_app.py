@@ -140,16 +140,10 @@ def render_output(results: list[dict[str, object]]) -> None:
     if not results:
         return
     if len(results) > 1:
-        col1, col2 = st.columns(2)
-        col1.metric("Model", MODEL_NAME)
-        col2.metric("Input Characters", len(str(results[0]["text"])))
         for result in results:
             st.markdown(f"### {result['voice']}")
             audio = np.asarray(result["audio"])
             st.audio(audio, sample_rate=SAMPLE_RATE)
-            mc1, mc2 = st.columns(2)
-            mc1.metric("Output Duration", f"{result['duration']:.2f}s")
-            mc2.metric("Generation Time", f"{result['generation_time']}s")
             st.download_button(
                 label=f"Download {result['voice']}",
                 data=_wav_bytes(audio),
@@ -161,11 +155,6 @@ def render_output(results: list[dict[str, object]]) -> None:
         result = results[0]
         audio = np.asarray(result["audio"])
         st.audio(audio, sample_rate=SAMPLE_RATE)
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Model", MODEL_NAME)
-        col2.metric("Input Characters", len(str(result["text"])))
-        col3.metric("Output Duration", f"{result['duration']:.2f}s")
-        col4.metric("Generation Time", f"{result['generation_time']}s")
         st.download_button(
             label="Download Audio",
             data=_wav_bytes(audio),
