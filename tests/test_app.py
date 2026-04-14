@@ -13,6 +13,7 @@ from streamlit_app import (
     REPO_ID,
     SAMPLE_RATE,
     _create_g2p,
+    _format_voice,
     _validate_input,
     _wav_bytes,
     generate_speech,
@@ -486,3 +487,29 @@ class TestPronunciationTips:
 
     def test_no_leading_trailing_whitespace(self) -> None:
         assert PRONUNCIATION_TIPS == PRONUNCIATION_TIPS.strip()
+
+
+class TestFormatVoice:
+    def test_american_female(self) -> None:
+        assert _format_voice("af_heart") == "Heart (female)"
+
+    def test_american_male(self) -> None:
+        assert _format_voice("am_adam") == "Adam (male)"
+
+    def test_british_female(self) -> None:
+        assert _format_voice("bf_alice") == "Alice (female)"
+
+    def test_japanese_female(self) -> None:
+        assert _format_voice("jf_alpha") == "Alpha (female)"
+
+    def test_title_cases_name(self) -> None:
+        assert _format_voice("af_bella") == "Bella (female)"
+
+    def test_multi_underscore_name_keeps_all_parts(self) -> None:
+        assert _format_voice("af_some_long_name") == "Some Long Name (female)"
+
+    def test_unknown_gender_char_returns_name_only(self) -> None:
+        assert _format_voice("ax_mystery") == "Mystery"
+
+    def test_no_underscore_returns_raw(self) -> None:
+        assert _format_voice("af") == "af"

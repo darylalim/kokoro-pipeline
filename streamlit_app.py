@@ -92,6 +92,17 @@ def tokenize_text(text: str, lang_code: str) -> str:
     return phonemes or ""
 
 
+_VOICE_GENDERS: dict[str, str] = {"f": "female", "m": "male"}
+
+
+def _format_voice(voice: str) -> str:
+    if "_" not in voice:
+        return voice
+    name = voice.split("_", 1)[1].replace("_", " ").title()
+    gender = _VOICE_GENDERS.get(voice[1], "") if len(voice) >= 2 else ""
+    return f"{name} ({gender})" if gender else name
+
+
 def generate_speech(
     text: str,
     voice: str,
