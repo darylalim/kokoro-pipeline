@@ -279,3 +279,6 @@ if tokenize_clicked:
 
 if st.session_state["current_output"] is not None:
     render_output(st.session_state["current_output"])
+
+with st.expander("Tips"):
+    st.markdown(PRONUNCIATION_TIPS)
