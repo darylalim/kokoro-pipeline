@@ -184,29 +184,31 @@ with voice_col1:
     language = st.selectbox(
         "Language",
         options=list(LANGUAGES.keys()),
-        help="Select a language for speech generation.",
+        label_visibility="collapsed",
     )
 
 lang_code = LANGUAGES[language]
 
 with voice_col2:
+    st.toggle("Compare", key="compare_mode")
     voices = get_voices(lang_code)
     if compare_mode:
         selected_voices = st.multiselect(
             "Voices",
             options=voices,
             max_selections=3,
+            format_func=_format_voice,
+            label_visibility="collapsed",
             help="Select up to 3 voices to compare.",
         )
     else:
         voice = st.selectbox(
             "Voice",
             options=voices,
-            help="The second letter indicates gender: 'f' for female, 'm' for male.",
+            format_func=_format_voice,
+            label_visibility="collapsed",
         )
         selected_voices = [voice]
-
-st.toggle("Compare Voices", key="compare_mode")
 
 speed = st.slider(
     "Speed",
