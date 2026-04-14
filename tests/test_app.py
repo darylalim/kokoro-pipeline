@@ -385,7 +385,6 @@ class TestRenderOutput:
         st.audio.reset_mock()  # type: ignore[union-attribute]
         st.download_button.reset_mock()  # type: ignore[union-attribute]
         st.markdown.reset_mock()  # type: ignore[union-attribute]
-        st.metric.reset_mock()  # type: ignore[union-attribute]
         st.expander.reset_mock()  # type: ignore[union-attribute]
         st.code.reset_mock()  # type: ignore[union-attribute]
 

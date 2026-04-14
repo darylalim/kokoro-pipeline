@@ -57,7 +57,7 @@ uv run streamlit run streamlit_app.py
 - `tokenize_text` — returns phoneme string without running inference
 - `_format_voice` — formats a raw voice ID (e.g. `af_heart`) into a display label (e.g. `"Heart (female)"`) for use as `format_func` on voice widgets
 - `_wav_bytes` — converts a NumPy audio array to WAV bytes
-- `render_output` — displays audio player, metrics, download button, phoneme expander
+- `render_output` — displays audio player, download button, phoneme expander
 
 ### Model
 
