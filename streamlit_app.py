@@ -46,7 +46,7 @@ ESPEAK_LANGUAGES: dict[str, str] = {
 
 @st.cache_data(ttl=3600)
 def get_voices(lang_code: str) -> list[str]:
-    return sorted(
+    voices = [
         voice
         for entry in list_repo_tree(REPO_ID, path_in_repo="voices")
         if (name := getattr(entry, "rfilename", ""))
@@ -54,7 +54,10 @@ def get_voices(lang_code: str) -> list[str]:
         and name.endswith(".safetensors")
         and len(voice := name.removeprefix("voices/").removesuffix(".safetensors")) >= 2
         and voice[0] == lang_code
-    )
+    ]
+    females = sorted(v for v in voices if v[1] == "f")
+    males = sorted(v for v in voices if v[1] == "m")
+    return females + males
 
 
 @st.cache_resource

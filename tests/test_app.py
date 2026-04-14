@@ -92,9 +92,17 @@ class TestGetVoices:
         voices = get_voices("x")
         assert voices == []
 
-    def test_voices_are_sorted(self) -> None:
+    def test_females_sorted_before_males(self) -> None:
         voices = get_voices("a")
-        assert voices == sorted(voices)
+        first_male_idx = next(
+            (i for i, v in enumerate(voices) if v[1] == "m"), len(voices)
+        )
+        females = voices[:first_male_idx]
+        males = voices[first_male_idx:]
+        assert females == sorted(females)
+        assert males == sorted(males)
+        assert all(v[1] == "f" for v in females)
+        assert all(v[1] == "m" for v in males)
 
     def test_returns_correct_voices(self) -> None:
         voices = get_voices("a")
