@@ -167,26 +167,16 @@ def render_output(results: list[dict[str, object]]) -> None:
 
 st.session_state.setdefault("current_output", None)
 
-st.title("Text to Speech Pipeline")
-st.write("Generate multilingual speech with Kokoro.")
+st.title("Kokoro Pipeline")
 
-st.subheader("Text")
 text_input = st.text_area(
     "Text",
-    placeholder="Enter text...",
+    placeholder="Enter text to generate speech...",
     height=200,
-    help="Enter text for speech generation.",
+    max_chars=CHAR_LIMIT,
     key="text_input",
 )
-if len(text_input) > CHAR_LIMIT:
-    st.caption(f":red[{len(text_input)} / {CHAR_LIMIT} characters]")
-else:
-    st.caption(f"{len(text_input)} / {CHAR_LIMIT} characters")
 
-with st.expander("Pronunciation Tips"):
-    st.markdown(PRONUNCIATION_TIPS)
-
-st.subheader("Voice")
 compare_mode = st.session_state.get("compare_mode", False)
 voice_col1, voice_col2 = st.columns(2)
 
@@ -218,7 +208,6 @@ with voice_col2:
 
 st.toggle("Compare Voices", key="compare_mode")
 
-st.subheader("Style")
 speed = st.slider(
     "Speed",
     min_value=0.5,
