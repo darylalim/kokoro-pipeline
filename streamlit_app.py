@@ -133,8 +133,6 @@ def _wav_bytes(audio: np.ndarray) -> bytes:
 def _validate_input(text: str) -> str | None:
     if not text.strip():
         return "Enter text."
-    if len(text) > CHAR_LIMIT:
-        return f"Text exceeds {CHAR_LIMIT} character limit."
     return None
 
 

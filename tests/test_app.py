@@ -366,11 +366,6 @@ class TestValidateInput:
     def test_exactly_at_limit(self) -> None:
         assert _validate_input("x" * CHAR_LIMIT) is None
 
-    def test_over_limit(self) -> None:
-        assert _validate_input("x" * (CHAR_LIMIT + 1)) == (
-            f"Text exceeds {CHAR_LIMIT} character limit."
-        )
-
 
 class TestRenderOutput:
     @staticmethod
