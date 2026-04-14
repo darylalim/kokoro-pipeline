@@ -55,6 +55,7 @@ uv run streamlit run streamlit_app.py
 - `load_tokenizer` — cached G2P tokenizer via direct `misaki` usage per language
 - `_create_g2p` — creates language-specific misaki G2P object
 - `tokenize_text` — returns phoneme string without running inference
+- `_format_voice` — formats a raw voice ID (e.g. `af_heart`) into a display label (e.g. `"Heart (female)"`) for use as `format_func` on voice widgets
 - `_wav_bytes` — converts a NumPy audio array to WAV bytes
 - `render_output` — displays audio player, metrics, download button, phoneme expander
 
@@ -79,11 +80,11 @@ Voices are discovered dynamically from the HuggingFace Hub (`mlx-community/Kokor
 
 ### UI
 
-- Text input with 5000-character limit (`CHAR_LIMIT`), live character count (red when exceeded)
-- Pronunciation Tips expander: collapsed by default, shows Kokoro pronunciation syntax (`PRONUNCIATION_TIPS` constant)
-- Language selection (9 languages via `LANGUAGES` dict)
-- Voice selector (dynamically populated from HuggingFace Hub)
-- Compare Voices toggle: switches voice selector to multiselect (max 3 voices)
+- Text input with 5000-character limit via `max_chars=CHAR_LIMIT` (Streamlit renders an inline counter in the widget's corner and enforces the cap client-side)
+- Language selector and Voice selector rendered side-by-side with `label_visibility="collapsed"` (no visible labels)
+- Voice display uses `_format_voice` to transform raw IDs (e.g. `af_heart`) into human-readable labels (e.g. `"Heart (female)"`)
+- Voices from `get_voices` are grouped by gender (females alphabetical, then males alphabetical)
+- Compare toggle sits inline inside the Voice column, directly above the Voice widget; switches voice selector between selectbox (single) and multiselect (up to 3 voices)
 - Speed slider (0.5–2.0, default 1.0)
 - Two-button row: Generate (primary), Tokenize
 - Chunk-by-chunk generation progress via `st.status` (per-voice in compare mode)
@@ -91,9 +92,8 @@ Voices are discovered dynamically from the HuggingFace Hub (`mlx-community/Kokor
 - Phoneme token expander (`st.expander` + `st.code`) below audio output; shared in compare mode
 - Generated audio displayed in browser player via `st.audio`
 - WAV download via `st.download_button` (saved with `scipy.io.wavfile.write`)
-- Metrics via `st.metric`: model name, input characters, output duration, generation time
-- Compare mode: shared Model + Input Characters metrics, per-voice Duration + Generation Time
 - Errors shown with `st.exception()`
+- "Tips" expander at the bottom of the page shows Kokoro pronunciation syntax (`PRONUNCIATION_TIPS` constant)
 - Session state (`st.session_state`) persists current output across reruns
 
 ## Resources

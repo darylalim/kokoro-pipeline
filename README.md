@@ -5,15 +5,14 @@ Streamlit web app for generating multilingual speech using [Kokoro-82M-bf16](htt
 ## Features
 
 - 9 supported languages (American English, British English, Spanish, French, Hindi, Italian, Japanese, Brazilian Portuguese, Mandarin Chinese)
-- Voices discovered dynamically from HuggingFace Hub
+- Voices discovered dynamically from HuggingFace Hub, displayed with human-readable labels (e.g. "Heart (female)")
 - Voice comparison mode (up to 3 voices side by side)
 - Adjustable speech speed (0.5x-2.0x)
-- Pronunciation tips with Kokoro-specific syntax (custom phonemes, stress, intonation)
-- 5000-character input limit with visual indicator
+- Inline 5000-character input limit (enforced as you type)
 - In-browser audio playback and WAV download
 - Chunk-by-chunk generation progress (per-voice in compare mode)
 - Phoneme token display with standalone Tokenize button
-- Generation metrics: model name, input characters, output duration, generation time
+- Tips panel with Kokoro-specific pronunciation syntax (custom phonemes, stress, intonation)
 
 ## Requirements
 
