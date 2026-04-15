@@ -32,7 +32,7 @@ uv run streamlit run streamlit_app.py
 
 **System:** `espeak-ng`
 
-**Runtime:** `en-core-web-sm` (pinned URL; update wheel URL if spaCy is upgraded), `misaki[ja]`, `misaki[zh]`, `mlx-audio`, `numpy`, `soundfile`, `streamlit`, `scipy`
+**Runtime:** `en-core-web-sm` (pinned URL; update wheel URL if spaCy is upgraded), `misaki[ja]`, `misaki[zh]`, `mlx-audio`, `numpy`, `soundfile`, `streamlit`
 
 **Dev:** `ruff`, `ty`, `pytest`
 
