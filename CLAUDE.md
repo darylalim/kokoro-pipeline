@@ -44,7 +44,7 @@ uv run streamlit run streamlit_app.py
 
 ### Files
 
-- `streamlit_app.py` — single-file app: text input, language/voice selection, speed control, audio playback, voice comparison, phoneme tokenization, character limit, pronunciation tips
+- `streamlit_app.py` — single-file app: text input, language/gender/voice selection (multi-voice up to 3), speed control, audio playback, phoneme tokenization, character limit, pronunciation tips
 - `tests/conftest.py` — mocks `streamlit`, `mlx_audio`, `misaki`, and `huggingface_hub` for import
 - `tests/test_app.py` — unit tests
 
