@@ -1,10 +1,8 @@
-import io
 import time
 from collections.abc import Generator
 from typing import Any
 
 import numpy as np
-import scipy.io.wavfile as wavfile
 import streamlit as st
 from huggingface_hub import list_repo_tree
 from mlx_audio.tts.utils import load_model
@@ -136,12 +134,6 @@ def generate_speech(
         raise ValueError("No audio generated. Check your input text.")
 
 
-def _wav_bytes(audio: np.ndarray) -> bytes:
-    buf = io.BytesIO()
-    wavfile.write(buf, SAMPLE_RATE, audio)
-    return buf.getvalue()
-
-
 def _validate_input(text: str) -> str | None:
     if not text.strip():
         return "Enter text."
@@ -157,18 +149,11 @@ def render_output(results: list[dict[str, object]]) -> None:
         return
     show_heading = len(results) > 1
     for result in results:
-        voice = result["voice"]
+        voice = str(result["voice"])
         audio = np.asarray(result["audio"])
         if show_heading:
-            st.markdown(f"### {voice}")
+            st.markdown(f"### {_format_voice(voice)}")
         st.audio(audio, sample_rate=SAMPLE_RATE)
-        st.download_button(
-            label="Download",
-            data=_wav_bytes(audio),
-            file_name=f"speech_{voice}.wav",
-            mime="audio/wav",
-            key=f"download_{voice}",
-        )
     with st.expander("Phoneme Tokens"):
         st.code(results[0]["phonemes"])
 

@@ -57,8 +57,7 @@ uv run streamlit run streamlit_app.py
 - `tokenize_text` — returns phoneme string without running inference
 - `_format_voice` — formats a raw voice ID (e.g. `af_heart`) into a display label (e.g. `"Heart (female)"`) for use as `format_func` on voice widgets
 - `_filter_voices_by_gender` — narrows a voice list to one gender (`"f"` or `"m"`), or returns unchanged for `None` (i.e. "All")
-- `_wav_bytes` — converts a NumPy audio array to WAV bytes
-- `render_output` — displays audio player, download button, phoneme expander
+- `render_output` — displays audio player and phoneme expander; per-voice heading (formatted via `_format_voice`) shown when multiple voices are selected
 
 ### Model
 
@@ -92,8 +91,7 @@ Voices are discovered dynamically from the HuggingFace Hub (`mlx-community/Kokor
 - Chunk-by-chunk generation progress via `st.status` (per-voice when multiple voices are selected)
 - Tokenize button: shows phoneme tokens without generating audio (uses misaki G2P directly)
 - Phoneme token expander (`st.expander` + `st.code`) below audio output; shared when multiple voices are selected
-- Generated audio displayed in browser player via `st.audio`
-- WAV download via `st.download_button` with a unified `"Download"` label and per-voice filename `speech_{voice}.wav` (saved with `scipy.io.wavfile.write`)
+- Generated audio displayed in browser player via `st.audio` (built-in download available from the player's menu)
 - Errors shown with `st.exception()`
 - "Tips" expander at the bottom of the page shows Kokoro pronunciation syntax (`PRONUNCIATION_TIPS` constant)
 - Session state (`st.session_state`) persists current output across reruns

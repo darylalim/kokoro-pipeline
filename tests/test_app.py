@@ -17,7 +17,6 @@ from streamlit_app import (
     _filter_voices_by_gender,
     _format_voice,
     _validate_input,
-    _wav_bytes,
     generate_speech,
     get_voices,
     load_pipeline,
@@ -329,32 +328,6 @@ class TestGenerateSpeech:
         assert results[0].shape == (100,)
 
 
-class TestWavBytes:
-    def test_returns_bytes(self) -> None:
-        audio = np.ones(24000, dtype=np.float32)
-        result = _wav_bytes(audio)
-        assert isinstance(result, bytes)
-
-    def test_returns_valid_wav_header(self) -> None:
-        audio = np.ones(24000, dtype=np.float32)
-        result = _wav_bytes(audio)
-        assert result[:4] == b"RIFF"
-        assert result[8:12] == b"WAVE"
-
-    def test_nonempty_output(self) -> None:
-        audio = np.zeros(100, dtype=np.float32)
-        result = _wav_bytes(audio)
-        assert len(result) > 44  # WAV header is 44 bytes
-
-    def test_sample_rate_in_header(self) -> None:
-        import struct
-
-        audio = np.ones(24000, dtype=np.float32)
-        result = _wav_bytes(audio)
-        rate = struct.unpack_from("<I", result, 24)[0]
-        assert rate == SAMPLE_RATE
-
-
 class TestValidateInput:
     def test_empty_string(self) -> None:
         assert _validate_input("") == "Enter text."
@@ -385,7 +358,6 @@ class TestRenderOutput:
 
     def _reset_st_mocks(self) -> None:
         st.audio.reset_mock()  # type: ignore[union-attribute]
-        st.download_button.reset_mock()  # type: ignore[union-attribute]
         st.markdown.reset_mock()  # type: ignore[union-attribute]
         st.expander.reset_mock()  # type: ignore[union-attribute]
         st.code.reset_mock()  # type: ignore[union-attribute]
@@ -394,25 +366,11 @@ class TestRenderOutput:
         self._reset_st_mocks()
         render_output([])
         st.audio.assert_not_called()  # type: ignore[union-attribute]
-        st.download_button.assert_not_called()  # type: ignore[union-attribute]
 
     def test_single_result_renders_audio(self) -> None:
         self._reset_st_mocks()
         render_output([self._make_result()])
         st.audio.assert_called_once()  # type: ignore[union-attribute]
-
-    def test_single_result_download_label_is_download(self) -> None:
-        self._reset_st_mocks()
-        render_output([self._make_result()])
-        st.download_button.assert_called_once()  # type: ignore[union-attribute]
-        call_kwargs = st.download_button.call_args[1]  # type: ignore[union-attribute]
-        assert call_kwargs["label"] == "Download"
-
-    def test_single_result_download_filename_includes_voice(self) -> None:
-        self._reset_st_mocks()
-        render_output([self._make_result(voice="af_heart")])
-        call_kwargs = st.download_button.call_args[1]  # type: ignore[union-attribute]
-        assert call_kwargs["file_name"] == "speech_af_heart.wav"
 
     def test_single_result_does_not_render_heading(self) -> None:
         self._reset_st_mocks()
@@ -425,36 +383,16 @@ class TestRenderOutput:
         render_output(results)
         assert st.audio.call_count == 2  # type: ignore[union-attribute]
 
-    def test_multi_download_labels_are_all_download(self) -> None:
+    def test_multi_renders_formatted_voice_headings(self) -> None:
         self._reset_st_mocks()
-        results = [self._make_result("af_heart"), self._make_result("af_bella")]
-        render_output(results)
-        labels = [
-            call[1]["label"]
-            for call in st.download_button.call_args_list  # type: ignore[union-attribute]
-        ]
-        assert labels == ["Download", "Download"]
-
-    def test_multi_download_filenames(self) -> None:
-        self._reset_st_mocks()
-        results = [self._make_result("af_heart"), self._make_result("af_bella")]
-        render_output(results)
-        filenames = [
-            call[1]["file_name"]
-            for call in st.download_button.call_args_list  # type: ignore[union-attribute]
-        ]
-        assert filenames == ["speech_af_heart.wav", "speech_af_bella.wav"]
-
-    def test_multi_renders_voice_headings(self) -> None:
-        self._reset_st_mocks()
-        results = [self._make_result("af_heart"), self._make_result("af_bella")]
+        results = [self._make_result("af_heart"), self._make_result("am_adam")]
         render_output(results)
         markdown_calls = [
             call[0][0]
             for call in st.markdown.call_args_list  # type: ignore[union-attribute]
         ]
-        assert "### af_heart" in markdown_calls
-        assert "### af_bella" in markdown_calls
+        assert "### Heart (female)" in markdown_calls
+        assert "### Adam (male)" in markdown_calls
 
     def test_single_result_shows_phoneme_expander(self) -> None:
         self._reset_st_mocks()
