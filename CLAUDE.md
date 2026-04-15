@@ -32,7 +32,7 @@ uv run streamlit run streamlit_app.py
 
 **System:** `espeak-ng`
 
-**Runtime:** `en-core-web-sm` (pinned URL; update wheel URL if spaCy is upgraded), `misaki[ja]`, `misaki[zh]`, `mlx-audio`, `numpy`, `soundfile`, `streamlit`
+**Runtime:** `en-core-web-sm` (pinned URL; update wheel URL if spaCy is upgraded), `misaki[ja]`, `misaki[zh]`, `mlx-audio`, `numpy`, `streamlit`
 
 **Dev:** `ruff`, `ty`, `pytest`
 
@@ -87,9 +87,9 @@ Voices are discovered dynamically from the HuggingFace Hub (`mlx-community/Kokor
 - Voice is always a multiselect (up to 3 voices). Changing Language or Gender clears the current voice selection via an `on_change` callback
 - Speed slider (0.5–2.0, default 1.0)
 - Two-button row: Generate (primary), Tokenize
-- Chunk-by-chunk generation progress via `st.status` (per-voice when multiple voices are selected)
+- Chunk-by-chunk generation progress via `st.status`, one block per selected voice
 - Tokenize button: shows phoneme tokens without generating audio (uses misaki G2P directly)
-- Phoneme token expander (`st.expander` + `st.code`) below audio output; shared when multiple voices are selected
+- Phoneme token expander (`st.expander` + `st.code`) rendered once below the audio output, using the first result's phonemes
 - Generated audio displayed in browser player via `st.audio` (built-in download available from the player's menu)
 - Errors shown with `st.exception()`
 - "Tips" expander at the bottom of the page shows Kokoro pronunciation syntax (`PRONUNCIATION_TIPS` constant)

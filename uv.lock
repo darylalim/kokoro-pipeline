@@ -572,7 +572,6 @@ dependencies = [
     { name = "misaki", extra = ["ja", "zh"] },
     { name = "mlx-audio" },
     { name = "numpy" },
-    { name = "soundfile" },
     { name = "streamlit" },
 ]
 
@@ -590,7 +589,6 @@ requires-dist = [
     { name = "misaki", extras = ["zh"] },
     { name = "mlx-audio" },
     { name = "numpy", specifier = ">=1.26.0" },
-    { name = "soundfile" },
     { name = "streamlit" },
 ]
 

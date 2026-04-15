@@ -9,7 +9,6 @@ dependencies = [
     "misaki[zh]",
     "mlx-audio",
     "numpy>=1.26.0",
-    "soundfile",
     "streamlit",
 ]
 
