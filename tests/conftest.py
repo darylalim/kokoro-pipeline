@@ -7,6 +7,7 @@ _st.cache_resource = lambda f: f
 _st.cache_data = lambda **_kw: lambda f: f
 _st.selectbox.side_effect = lambda label, **_kw: {
     "Language": "American English",
+    "Gender": "All",
     "Voice": "af_heart",
 }.get(label, MagicMock())
 _st.slider.side_effect = lambda label, **_kw: {

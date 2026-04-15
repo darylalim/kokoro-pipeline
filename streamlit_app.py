@@ -182,45 +182,54 @@ st.session_state.setdefault("current_output", None)
 st.title("Kokoro Pipeline")
 
 text_input = st.text_area(
-    "Text",
+    label="Text",
     placeholder="Enter text to generate speech...",
     height=200,
     max_chars=CHAR_LIMIT,
     key="text_input",
+    label_visibility="collapsed",
 )
 
-compare_mode = st.session_state.get("compare_mode", False)
-voice_col1, voice_col2 = st.columns(2)
 
-with voice_col1:
+def _reset_selected_voices() -> None:
+    st.session_state["selected_voices"] = []
+
+
+lang_col, gender_col, voice_col = st.columns(3)
+
+with lang_col:
     language = st.selectbox(
         "Language",
         options=list(LANGUAGES.keys()),
         label_visibility="collapsed",
+        key="language",
+        on_change=_reset_selected_voices,
     )
 
 lang_code = LANGUAGES[language]
 
-with voice_col2:
-    st.toggle("Compare", key="compare_mode")
-    voices = get_voices(lang_code)
-    if compare_mode:
-        selected_voices = st.multiselect(
-            "Voices",
-            options=voices,
-            max_selections=3,
-            format_func=_format_voice,
-            label_visibility="collapsed",
-            help="Select up to 3 voices to compare.",
-        )
-    else:
-        voice = st.selectbox(
-            "Voice",
-            options=voices,
-            format_func=_format_voice,
-            label_visibility="collapsed",
-        )
-        selected_voices = [voice]
+with gender_col:
+    gender_label = st.selectbox(
+        "Gender",
+        options=list(GENDERS.keys()),
+        label_visibility="collapsed",
+        key="gender",
+        on_change=_reset_selected_voices,
+    )
+
+gender_code = GENDERS[gender_label]
+voices = _filter_voices_by_gender(get_voices(lang_code), gender_code)
+
+with voice_col:
+    selected_voices = st.multiselect(
+        "Voices",
+        options=voices,
+        max_selections=3,
+        format_func=_format_voice,
+        label_visibility="collapsed",
+        help="Select up to 3 voices.",
+        key="selected_voices",
+    )
 
 speed = st.slider(
     "Speed",
@@ -244,7 +253,7 @@ if generate_clicked:
     warning = _validate_input(text_input)
     if warning:
         st.warning(warning)
-    elif compare_mode and not selected_voices:
+    elif not selected_voices:
         st.warning("Select at least one voice.")
     else:
         try:
