@@ -13,6 +13,8 @@ from streamlit_app import (
     PRONUNCIATION_TIPS,
     REPO_ID,
     SAMPLE_RATE,
+    VoiceResult,
+    _clear_voice_state,
     _create_g2p,
     _filter_voices_by_gender,
     _format_voice,
@@ -344,9 +346,7 @@ class TestValidateInput:
 
 class TestRenderOutput:
     @staticmethod
-    def _make_result(
-        voice: str = "af_heart", phonemes: str = "hɛlˈoʊ"
-    ) -> dict[str, object]:
+    def _make_result(voice: str = "af_heart", phonemes: str = "hɛlˈoʊ") -> VoiceResult:
         return {
             "audio": np.ones(24000, dtype=np.float32),
             "voice": voice,
@@ -379,6 +379,12 @@ class TestRenderOutput:
         results = [self._make_result("af_heart"), self._make_result("af_bella")]
         render_output(results)
         assert st.audio.call_count == 2  # type: ignore[union-attribute]
+
+    def test_audio_passed_with_correct_sample_rate(self) -> None:
+        self._reset_st_mocks()
+        render_output([self._make_result()])
+        call_kwargs = st.audio.call_args[1]  # type: ignore[union-attribute]
+        assert call_kwargs["sample_rate"] == SAMPLE_RATE
 
     def test_multi_renders_formatted_voice_headings(self) -> None:
         self._reset_st_mocks()
@@ -474,6 +480,18 @@ class TestGenders:
 
     def test_male_maps_to_m(self) -> None:
         assert GENDERS["Male"] == "m"
+
+
+class TestClearVoiceState:
+    def test_clears_selected_voices(self) -> None:
+        st.session_state["selected_voices"] = ["af_heart", "am_adam"]
+        _clear_voice_state()
+        assert st.session_state["selected_voices"] == []
+
+    def test_clears_current_output(self) -> None:
+        st.session_state["current_output"] = [{"voice": "af_heart"}]
+        _clear_voice_state()
+        assert st.session_state["current_output"] is None
 
 
 class TestFilterVoicesByGender:

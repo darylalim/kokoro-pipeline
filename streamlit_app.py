@@ -1,10 +1,17 @@
 from collections.abc import Generator
-from typing import Any
+from typing import Any, TypedDict
 
 import numpy as np
 import streamlit as st
 from huggingface_hub import list_repo_tree
 from mlx_audio.tts.utils import load_model
+
+
+class VoiceResult(TypedDict):
+    audio: np.ndarray
+    voice: str
+    phonemes: str
+
 
 MODEL_NAME = "Kokoro-82M-bf16"
 SAMPLE_RATE = 24000
@@ -98,7 +105,9 @@ def tokenize_text(text: str, lang_code: str) -> str:
     return phonemes or ""
 
 
-_VOICE_GENDERS: dict[str, str] = {"f": "female", "m": "male"}
+_VOICE_GENDERS: dict[str, str] = {
+    code: label.lower() for label, code in GENDERS.items() if code
+}
 
 
 def _format_voice(voice: str) -> str:
@@ -139,20 +148,19 @@ def _validate_input(text: str) -> str | None:
     return None
 
 
-def _reset_selected_voices() -> None:
+def _clear_voice_state() -> None:
     st.session_state["selected_voices"] = []
+    st.session_state["current_output"] = None
 
 
-def render_output(results: list[dict[str, object]]) -> None:
+def render_output(results: list[VoiceResult]) -> None:
     if not results:
         return
     show_heading = len(results) > 1
     for result in results:
-        voice = str(result["voice"])
-        audio = np.asarray(result["audio"])
         if show_heading:
-            st.markdown(f"### {_format_voice(voice)}")
-        st.audio(audio, sample_rate=SAMPLE_RATE)
+            st.markdown(f"### {_format_voice(result['voice'])}")
+        st.audio(result["audio"], sample_rate=SAMPLE_RATE)
     with st.expander("Phoneme Tokens"):
         st.code(results[0]["phonemes"])
 
@@ -179,7 +187,7 @@ with lang_col:
         options=list(LANGUAGES.keys()),
         label_visibility="collapsed",
         key="language",
-        on_change=_reset_selected_voices,
+        on_change=_clear_voice_state,
     )
 
 lang_code = LANGUAGES[language]
@@ -190,7 +198,7 @@ with gender_col:
         options=list(GENDERS.keys()),
         label_visibility="collapsed",
         key="gender",
-        on_change=_reset_selected_voices,
+        on_change=_clear_voice_state,
     )
 
 gender_code = GENDERS[gender_label]
@@ -214,6 +222,7 @@ speed = st.slider(
     value=1.0,
     step=0.1,
     help="Speech rate multiplier. 1.0 is normal speed.",
+    key="speed",
 )
 
 with st.spinner("Loading model..."):
@@ -233,7 +242,7 @@ if generate_clicked:
         st.warning("Select at least one voice.")
     else:
         try:
-            results = []
+            results: list[VoiceResult] = []
             phonemes = tokenize_text(text_input, lang_code)
             for v in selected_voices:
                 with st.status(f"Generating {v}...", expanded=True) as status:
