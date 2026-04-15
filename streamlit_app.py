@@ -1,4 +1,3 @@
-import time
 from collections.abc import Generator
 from typing import Any
 
@@ -237,7 +236,6 @@ if generate_clicked:
             results = []
             phonemes = tokenize_text(text_input, lang_code)
             for v in selected_voices:
-                start = time.perf_counter()
                 with st.status(f"Generating {v}...", expanded=True) as status:
                     audio_chunks = []
                     for i, audio_chunk in enumerate(
@@ -249,15 +247,10 @@ if generate_clicked:
                         audio_chunks.append(audio_chunk)
                         st.write(f"Chunk {i}...")
                     status.update(label=f"{v} complete!", state="complete")
-                gen_time = round(time.perf_counter() - start, 2)
-                audio_array = np.concatenate(audio_chunks)
                 results.append(
                     {
-                        "audio": audio_array,
+                        "audio": np.concatenate(audio_chunks),
                         "voice": v,
-                        "text": text_input,
-                        "duration": len(audio_array) / SAMPLE_RATE,
-                        "generation_time": gen_time,
                         "phonemes": phonemes,
                     }
                 )

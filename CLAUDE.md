@@ -76,7 +76,6 @@ Voices are discovered dynamically from the HuggingFace Hub (`mlx-community/Kokor
 - MLX backend runs natively on Apple Silicon (no PyTorch or MPS fallback needed)
 - `@st.cache_resource` to cache model globally and tokenizers per language
 - `@st.cache_data(ttl=3600)` to cache voice lists (1-hour TTL)
-- `time.perf_counter()` for timing
 
 ### UI
 

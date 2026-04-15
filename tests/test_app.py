@@ -345,14 +345,11 @@ class TestValidateInput:
 class TestRenderOutput:
     @staticmethod
     def _make_result(
-        voice: str = "af_heart", text: str = "hello", phonemes: str = "hɛlˈoʊ"
+        voice: str = "af_heart", phonemes: str = "hɛlˈoʊ"
     ) -> dict[str, object]:
         return {
             "audio": np.ones(24000, dtype=np.float32),
             "voice": voice,
-            "text": text,
-            "duration": 1.0,
-            "generation_time": 0.5,
             "phonemes": phonemes,
         }
 
