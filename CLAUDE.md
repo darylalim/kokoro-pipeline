@@ -51,13 +51,15 @@ uv run streamlit run streamlit_app.py
 ### Key Functions
 
 - `generate_speech` — generator yielding audio arrays per chunk; takes `lang_code` parameter
-- `load_pipeline` — cached global model via `mlx_audio.tts.utils.load_model` (no lang_code parameter)
+- `generate_all` — runs `generate_speech` per voice inside `st.status` blocks, concatenates chunks, and returns a `list[VoiceResult]`
+- `load_pipeline` — cached global model via `mlx_audio.tts.utils.load_model` (no lang_code parameter); called lazily on first Generate click
 - `load_tokenizer` — cached G2P tokenizer via direct `misaki` usage per language
 - `_create_g2p` — creates language-specific misaki G2P object
 - `tokenize_text` — returns phoneme string without running inference
 - `_format_voice` — formats a raw voice ID (e.g. `af_heart`) into a display label (e.g. `"Heart (female)"`) for use as `format_func` on voice widgets
 - `_filter_voices_by_gender` — narrows a voice list to one gender (`"f"` or `"m"`), or returns unchanged for `None` (i.e. "All")
-- `render_output` — displays audio player and phoneme expander; per-voice heading (formatted via `_format_voice`) shown when multiple voices are selected
+- `render_phonemes` — renders the `Phoneme Tokens` expander with `st.code`; `expanded` flag toggles open state
+- `render_output` — displays audio player per result and calls `render_phonemes` once; per-voice heading (formatted via `_format_voice`) shown when multiple voices are selected
 
 ### Model
 
@@ -74,8 +76,10 @@ Voices are discovered dynamically from the HuggingFace Hub (`mlx-community/Kokor
 ### Performance
 
 - MLX backend runs natively on Apple Silicon (no PyTorch or MPS fallback needed)
-- `@st.cache_resource` to cache model globally and tokenizers per language
-- `@st.cache_data(ttl=3600)` to cache voice lists (1-hour TTL)
+- `@st.cache_resource` caches the model globally and tokenizers per language
+- `@st.cache_data(ttl=3600)` caches voice lists (1-hour TTL)
+- `load_pipeline()` is deferred until the user clicks Generate, so initial page render is not blocked by model load
+- `generate_speech` uses `np.asarray(..., dtype=np.float32)` to avoid copying chunks that are already float32
 
 ### UI
 
@@ -87,9 +91,10 @@ Voices are discovered dynamically from the HuggingFace Hub (`mlx-community/Kokor
 - Voice is always a multiselect (up to 3 voices). Changing Language or Gender clears the current voice selection via an `on_change` callback
 - Speed slider (0.5–2.0, default 1.0)
 - Two-button row: Generate (primary), Tokenize
-- Chunk-by-chunk generation progress via `st.status`, one block per selected voice
-- Tokenize button: shows phoneme tokens without generating audio (uses misaki G2P directly)
-- Phoneme token expander (`st.expander` + `st.code`) rendered once below the audio output, using the first result's phonemes
+- Chunk-by-chunk generation progress via `st.status`, one block per selected voice (rendered inside `generate_all`)
+- Model loads lazily on the first Generate click, shown via `st.spinner("Loading model...")`
+- Tokenize button: shows phoneme tokens without generating audio (uses misaki G2P directly via `render_phonemes`)
+- Phoneme token expander rendered once below the audio output via `render_phonemes`, using the first result's phonemes
 - Generated audio displayed in browser player via `st.audio` (built-in download available from the player's menu)
 - Errors shown with `st.exception()`
 - "Tips" expander at the bottom of the page shows Kokoro pronunciation syntax (`PRONUNCIATION_TIPS` constant)
