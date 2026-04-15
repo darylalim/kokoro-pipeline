@@ -89,9 +89,9 @@ Voices are discovered dynamically from the HuggingFace Hub (`mlx-community/Kokor
 - Voice is always a multiselect (up to 3 voices). Changing Language or Gender clears the current voice selection via an `on_change` callback
 - Speed slider (0.5–2.0, default 1.0)
 - Two-button row: Generate (primary), Tokenize
-- Chunk-by-chunk generation progress via `st.status` (per-voice in compare mode)
+- Chunk-by-chunk generation progress via `st.status` (per-voice when multiple voices are selected)
 - Tokenize button: shows phoneme tokens without generating audio (uses misaki G2P directly)
-- Phoneme token expander (`st.expander` + `st.code`) below audio output; shared in compare mode
+- Phoneme token expander (`st.expander` + `st.code`) below audio output; shared when multiple voices are selected
 - Generated audio displayed in browser player via `st.audio`
 - WAV download via `st.download_button` with a unified `"Download"` label and per-voice filename `speech_{voice}.wav` (saved with `scipy.io.wavfile.write`)
 - Errors shown with `st.exception()`
