@@ -43,6 +43,12 @@ ESPEAK_LANGUAGES: dict[str, str] = {
     "p": "pt-br",
 }
 
+GENDERS: dict[str, str | None] = {
+    "All": None,
+    "Female": "f",
+    "Male": "m",
+}
+
 
 @st.cache_data(ttl=3600)
 def get_voices(lang_code: str) -> list[str]:
@@ -104,6 +110,12 @@ def _format_voice(voice: str) -> str:
     name = voice.split("_", 1)[1].replace("_", " ").title()
     gender = _VOICE_GENDERS.get(voice[1], "")
     return f"{name} ({gender})" if gender else name
+
+
+def _filter_voices_by_gender(voices: list[str], gender_code: str | None) -> list[str]:
+    if gender_code is None:
+        return voices
+    return [v for v in voices if len(v) >= 2 and v[1] == gender_code]
 
 
 def generate_speech(

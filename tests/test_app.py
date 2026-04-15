@@ -7,12 +7,14 @@ import streamlit as st
 from streamlit_app import (
     CHAR_LIMIT,
     ESPEAK_LANGUAGES,
+    GENDERS,
     LANGUAGES,
     MODEL_NAME,
     PRONUNCIATION_TIPS,
     REPO_ID,
     SAMPLE_RATE,
     _create_g2p,
+    _filter_voices_by_gender,
     _format_voice,
     _validate_input,
     _wav_bytes,
@@ -515,3 +517,46 @@ class TestFormatVoice:
 
     def test_no_underscore_returns_raw(self) -> None:
         assert _format_voice("af") == "af"
+
+
+class TestGenders:
+    def test_has_all_option(self) -> None:
+        assert "All" in GENDERS
+
+    def test_has_female(self) -> None:
+        assert "Female" in GENDERS
+
+    def test_has_male(self) -> None:
+        assert "Male" in GENDERS
+
+    def test_all_maps_to_none(self) -> None:
+        assert GENDERS["All"] is None
+
+    def test_female_maps_to_f(self) -> None:
+        assert GENDERS["Female"] == "f"
+
+    def test_male_maps_to_m(self) -> None:
+        assert GENDERS["Male"] == "m"
+
+
+class TestFilterVoicesByGender:
+    VOICES = ["af_bella", "af_heart", "am_adam", "am_echo"]
+
+    def test_all_returns_unchanged(self) -> None:
+        assert _filter_voices_by_gender(self.VOICES, None) == self.VOICES
+
+    def test_female_filters_to_f(self) -> None:
+        assert _filter_voices_by_gender(self.VOICES, "f") == ["af_bella", "af_heart"]
+
+    def test_male_filters_to_m(self) -> None:
+        assert _filter_voices_by_gender(self.VOICES, "m") == ["am_adam", "am_echo"]
+
+    def test_empty_input_returns_empty(self) -> None:
+        assert _filter_voices_by_gender([], "f") == []
+
+    def test_no_matches_returns_empty(self) -> None:
+        assert _filter_voices_by_gender(["af_bella"], "m") == []
+
+    def test_preserves_input_order(self) -> None:
+        voices = ["af_heart", "am_adam", "af_bella"]
+        assert _filter_voices_by_gender(voices, "f") == ["af_heart", "af_bella"]
