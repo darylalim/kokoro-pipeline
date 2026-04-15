@@ -16,4 +16,6 @@ __pycache__/
 
 # Superpowers
 .superpowers/
-docs/superpowers/
+
+# Docs
+docs/
