@@ -8,7 +8,6 @@ _st.cache_data = lambda **_kw: lambda f: f
 _st.selectbox.side_effect = lambda label, **_kw: {
     "Language": "American English",
     "Gender": "All",
-    "Voice": "af_heart",
 }.get(label, MagicMock())
 _st.slider.side_effect = lambda label, **_kw: {
     "Speed": 1.0,
@@ -16,7 +15,6 @@ _st.slider.side_effect = lambda label, **_kw: {
 _st.button.return_value = False
 _st.text_area.return_value = ""
 _st.columns.side_effect = lambda n: [MagicMock() for _ in range(n)]
-_st.toggle.return_value = False
 _st.multiselect.return_value = []
 _st.session_state = {}
 sys.modules["streamlit"] = _st

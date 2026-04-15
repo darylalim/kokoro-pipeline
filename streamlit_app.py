@@ -148,6 +148,10 @@ def _validate_input(text: str) -> str | None:
     return None
 
 
+def _reset_selected_voices() -> None:
+    st.session_state["selected_voices"] = []
+
+
 def render_output(results: list[dict[str, object]]) -> None:
     if not results:
         return
@@ -189,10 +193,6 @@ text_input = st.text_area(
     key="text_input",
     label_visibility="collapsed",
 )
-
-
-def _reset_selected_voices() -> None:
-    st.session_state["selected_voices"] = []
 
 
 lang_col, gender_col, voice_col = st.columns(3)
