@@ -401,38 +401,51 @@ class TestRenderOutput:
         render_output([self._make_result()])
         st.audio.assert_called_once()  # type: ignore[union-attribute]
 
-    def test_single_result_download_filename(self) -> None:
+    def test_single_result_download_label_is_download(self) -> None:
         self._reset_st_mocks()
         render_output([self._make_result()])
         st.download_button.assert_called_once()  # type: ignore[union-attribute]
         call_kwargs = st.download_button.call_args[1]  # type: ignore[union-attribute]
-        assert call_kwargs["file_name"] == "speech.wav"
+        assert call_kwargs["label"] == "Download"
 
-    def test_single_result_download_label(self) -> None:
+    def test_single_result_download_filename_includes_voice(self) -> None:
+        self._reset_st_mocks()
+        render_output([self._make_result(voice="af_heart")])
+        call_kwargs = st.download_button.call_args[1]  # type: ignore[union-attribute]
+        assert call_kwargs["file_name"] == "speech_af_heart.wav"
+
+    def test_single_result_does_not_render_heading(self) -> None:
         self._reset_st_mocks()
         render_output([self._make_result()])
-        call_kwargs = st.download_button.call_args[1]  # type: ignore[union-attribute]
-        assert call_kwargs["label"] == "Download Audio"
+        st.markdown.assert_not_called()  # type: ignore[union-attribute]
 
-    def test_compare_renders_audio_per_voice(self) -> None:
+    def test_multi_renders_audio_per_voice(self) -> None:
         self._reset_st_mocks()
         results = [self._make_result("af_heart"), self._make_result("af_bella")]
         render_output(results)
         assert st.audio.call_count == 2  # type: ignore[union-attribute]
 
-    def test_compare_download_filenames(self) -> None:
+    def test_multi_download_labels_are_all_download(self) -> None:
         self._reset_st_mocks()
         results = [self._make_result("af_heart"), self._make_result("af_bella")]
         render_output(results)
-        assert st.download_button.call_count == 2  # type: ignore[union-attribute]
+        labels = [
+            call[1]["label"]
+            for call in st.download_button.call_args_list  # type: ignore[union-attribute]
+        ]
+        assert labels == ["Download", "Download"]
+
+    def test_multi_download_filenames(self) -> None:
+        self._reset_st_mocks()
+        results = [self._make_result("af_heart"), self._make_result("af_bella")]
+        render_output(results)
         filenames = [
             call[1]["file_name"]
             for call in st.download_button.call_args_list  # type: ignore[union-attribute]
         ]
-        assert "speech_af_heart.wav" in filenames
-        assert "speech_af_bella.wav" in filenames
+        assert filenames == ["speech_af_heart.wav", "speech_af_bella.wav"]
 
-    def test_compare_voice_labels(self) -> None:
+    def test_multi_renders_voice_headings(self) -> None:
         self._reset_st_mocks()
         results = [self._make_result("af_heart"), self._make_result("af_bella")]
         render_output(results)
@@ -442,17 +455,6 @@ class TestRenderOutput:
         ]
         assert "### af_heart" in markdown_calls
         assert "### af_bella" in markdown_calls
-
-    def test_compare_download_labels_include_voice(self) -> None:
-        self._reset_st_mocks()
-        results = [self._make_result("af_heart"), self._make_result("am_adam")]
-        render_output(results)
-        labels = [
-            call[1]["label"]
-            for call in st.download_button.call_args_list  # type: ignore[union-attribute]
-        ]
-        assert "Download af_heart" in labels
-        assert "Download am_adam" in labels
 
     def test_single_result_shows_phoneme_expander(self) -> None:
         self._reset_st_mocks()
@@ -464,7 +466,7 @@ class TestRenderOutput:
         render_output([self._make_result(phonemes="hɛlˈoʊ")])
         st.code.assert_called_once_with("hɛlˈoʊ")  # type: ignore[union-attribute]
 
-    def test_compare_shows_single_shared_phoneme_expander(self) -> None:
+    def test_multi_shows_single_shared_phoneme_expander(self) -> None:
         self._reset_st_mocks()
         results = [
             self._make_result("af_heart", phonemes="hɛlˈoʊ"),

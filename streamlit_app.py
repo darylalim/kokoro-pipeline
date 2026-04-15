@@ -155,27 +155,19 @@ def _reset_selected_voices() -> None:
 def render_output(results: list[dict[str, object]]) -> None:
     if not results:
         return
-    if len(results) > 1:
-        for result in results:
-            st.markdown(f"### {result['voice']}")
-            audio = np.asarray(result["audio"])
-            st.audio(audio, sample_rate=SAMPLE_RATE)
-            st.download_button(
-                label=f"Download {result['voice']}",
-                data=_wav_bytes(audio),
-                file_name=f"speech_{result['voice']}.wav",
-                mime="audio/wav",
-                key=f"download_{result['voice']}",
-            )
-    else:
-        result = results[0]
+    show_heading = len(results) > 1
+    for result in results:
+        voice = result["voice"]
         audio = np.asarray(result["audio"])
+        if show_heading:
+            st.markdown(f"### {voice}")
         st.audio(audio, sample_rate=SAMPLE_RATE)
         st.download_button(
-            label="Download Audio",
+            label="Download",
             data=_wav_bytes(audio),
-            file_name="speech.wav",
+            file_name=f"speech_{voice}.wav",
             mime="audio/wav",
+            key=f"download_{voice}",
         )
     with st.expander("Phoneme Tokens"):
         st.code(results[0]["phonemes"])
