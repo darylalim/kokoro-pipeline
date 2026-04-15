@@ -9,7 +9,6 @@ from streamlit_app import (
     ESPEAK_LANGUAGES,
     GENDERS,
     LANGUAGES,
-    MODEL_NAME,
     PRONUNCIATION_TIPS,
     REPO_ID,
     SAMPLE_RATE,
@@ -18,12 +17,13 @@ from streamlit_app import (
     _create_g2p,
     _filter_voices_by_gender,
     _format_voice,
-    _validate_input,
+    generate_all,
     generate_speech,
     get_voices,
     load_pipeline,
     load_tokenizer,
     render_output,
+    render_phonemes,
     tokenize_text,
 )
 
@@ -55,9 +55,6 @@ class TestLanguages:
 
 
 class TestModelConstants:
-    def test_model_name(self) -> None:
-        assert MODEL_NAME == "Kokoro-82M-bf16"
-
     def test_sample_rate(self) -> None:
         assert SAMPLE_RATE == 24000
 
@@ -330,18 +327,67 @@ class TestGenerateSpeech:
         assert results[0].shape == (100,)
 
 
-class TestValidateInput:
-    def test_empty_string(self) -> None:
-        assert _validate_input("") == "Enter text."
+class TestGenerateAll:
+    def _model(self, audio_length: int = 100) -> MagicMock:
+        model = MagicMock()
+        chunk = MagicMock()
+        chunk.audio = np.ones(audio_length, dtype=np.float32)
+        model.generate.return_value = [chunk]
+        return model
 
-    def test_whitespace_only(self) -> None:
-        assert _validate_input("   \n\t") == "Enter text."
+    def _mock_tokenizer(self, phonemes: str = "hɛlˈoʊ") -> None:
+        from misaki import en
 
-    def test_within_limit(self) -> None:
-        assert _validate_input("hello") is None
+        en.G2P.return_value = MagicMock(return_value=(phonemes, None))  # type: ignore[union-attribute]
 
-    def test_exactly_at_limit(self) -> None:
-        assert _validate_input("x" * CHAR_LIMIT) is None
+    def test_returns_one_result_per_voice(self) -> None:
+        self._mock_tokenizer()
+        model = self._model()
+        results = generate_all("hi", ["af_heart", "af_bella"], model, 1.0, "a")
+        assert [r["voice"] for r in results] == ["af_heart", "af_bella"]
+
+    def test_phonemes_shared_across_results(self) -> None:
+        self._mock_tokenizer("test phonemes")
+        model = self._model()
+        results = generate_all("hi", ["af_heart", "af_bella"], model, 1.0, "a")
+        assert all(r["phonemes"] == "test phonemes" for r in results)
+
+    def test_audio_concatenated(self) -> None:
+        self._mock_tokenizer()
+        model = MagicMock()
+        c1, c2 = MagicMock(), MagicMock()
+        c1.audio = np.ones(50, dtype=np.float32)
+        c2.audio = np.zeros(30, dtype=np.float32)
+        model.generate.return_value = [c1, c2]
+        results = generate_all("hi", ["af_heart"], model, 1.0, "a")
+        assert results[0]["audio"].shape == (80,)
+
+    def test_passes_speed_and_lang(self) -> None:
+        self._mock_tokenizer()
+        model = self._model()
+        generate_all("hi", ["af_heart"], model, 1.5, "b")
+        model.generate.assert_called_with(
+            text="hi", voice="af_heart", speed=1.5, lang_code="b"
+        )
+
+    def test_empty_voice_list_returns_empty(self) -> None:
+        self._mock_tokenizer()
+        results = generate_all("hi", [], MagicMock(), 1.0, "a")
+        assert results == []
+
+
+class TestRenderPhonemes:
+    def test_renders_expander_and_code(self) -> None:
+        st.expander.reset_mock()  # type: ignore[union-attribute]
+        st.code.reset_mock()  # type: ignore[union-attribute]
+        render_phonemes("hɛlˈoʊ")
+        st.expander.assert_called_once_with("Phoneme Tokens", expanded=False)  # type: ignore[union-attribute]
+        st.code.assert_called_once_with("hɛlˈoʊ")  # type: ignore[union-attribute]
+
+    def test_expanded_flag_forwarded(self) -> None:
+        st.expander.reset_mock()  # type: ignore[union-attribute]
+        render_phonemes("x", expanded=True)
+        st.expander.assert_called_once_with("Phoneme Tokens", expanded=True)  # type: ignore[union-attribute]
 
 
 class TestRenderOutput:
@@ -400,7 +446,7 @@ class TestRenderOutput:
     def test_single_result_shows_phoneme_expander(self) -> None:
         self._reset_st_mocks()
         render_output([self._make_result()])
-        st.expander.assert_called_once_with("Phoneme Tokens")  # type: ignore[union-attribute]
+        st.expander.assert_called_once_with("Phoneme Tokens", expanded=False)  # type: ignore[union-attribute]
 
     def test_single_result_shows_phonemes_in_code(self) -> None:
         self._reset_st_mocks()
@@ -414,7 +460,7 @@ class TestRenderOutput:
             self._make_result("af_bella", phonemes="hɛlˈoʊ"),
         ]
         render_output(results)
-        st.expander.assert_called_once_with("Phoneme Tokens")  # type: ignore[union-attribute]
+        st.expander.assert_called_once_with("Phoneme Tokens", expanded=False)  # type: ignore[union-attribute]
         st.code.assert_called_once_with("hɛlˈoʊ")  # type: ignore[union-attribute]
 
 

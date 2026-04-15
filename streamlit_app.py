@@ -13,7 +13,6 @@ class VoiceResult(TypedDict):
     phonemes: str
 
 
-MODEL_NAME = "Kokoro-82M-bf16"
 SAMPLE_RATE = 24000
 REPO_ID = "mlx-community/Kokoro-82M-bf16"
 CHAR_LIMIT = 5000
@@ -52,6 +51,8 @@ GENDERS: dict[str, str | None] = {
     "Female": "f",
     "Male": "m",
 }
+
+_GENDER_LABELS = {code: label.lower() for label, code in GENDERS.items() if code}
 
 
 @st.cache_data(ttl=3600)
@@ -105,52 +106,70 @@ def tokenize_text(text: str, lang_code: str) -> str:
     return phonemes or ""
 
 
-_VOICE_GENDERS: dict[str, str] = {
-    code: label.lower() for label, code in GENDERS.items() if code
-}
-
-
 def _format_voice(voice: str) -> str:
     if "_" not in voice:
         return voice
     name = voice.split("_", 1)[1].replace("_", " ").title()
-    gender = _VOICE_GENDERS.get(voice[1], "")
+    gender = _GENDER_LABELS.get(voice[1], "")
     return f"{name} ({gender})" if gender else name
 
 
 def _filter_voices_by_gender(voices: list[str], gender_code: str | None) -> list[str]:
     if gender_code is None:
         return voices
-    return [v for v in voices if len(v) >= 2 and v[1] == gender_code]
+    return [v for v in voices if v[1] == gender_code]
 
 
 def generate_speech(
     text: str,
     voice: str,
-    model: Any,
+    pipeline: Any,
     speed: float = 1.0,
     lang_code: str = "a",
 ) -> Generator[np.ndarray, None, None]:
     generated = False
-    for result in model.generate(
+    for result in pipeline.generate(
         text=text, voice=voice, speed=speed, lang_code=lang_code
     ):
         if result.audio is not None:
             generated = True
-            yield np.array(result.audio, dtype=np.float32)
+            yield np.asarray(result.audio, dtype=np.float32)
     if not generated:
         raise ValueError("No audio generated. Check your input text.")
 
 
-def _validate_input(text: str) -> str | None:
-    if not text.strip():
-        return "Enter text."
-    return None
+def generate_all(
+    text: str,
+    voices: list[str],
+    pipeline: Any,
+    speed: float,
+    lang_code: str,
+) -> list[VoiceResult]:
+    phonemes = tokenize_text(text, lang_code)
+    results: list[VoiceResult] = []
+    for v in voices:
+        with st.status(f"Generating {v}...", expanded=True) as status:
+            chunks = []
+            for i, chunk in enumerate(
+                generate_speech(text, v, pipeline, speed=speed, lang_code=lang_code), 1
+            ):
+                chunks.append(chunk)
+                st.write(f"Chunk {i}...")
+            results.append(
+                {"audio": np.concatenate(chunks), "voice": v, "phonemes": phonemes}
+            )
+            status.update(label=f"{v} complete!", state="complete")
+    return results
 
 
 def _clear_voice_state() -> None:
     st.session_state["selected_voices"] = []
     st.session_state["current_output"] = None
+
+
+def render_phonemes(phonemes: str, *, expanded: bool = False) -> None:
+    with st.expander("Phoneme Tokens", expanded=expanded):
+        st.code(phonemes)
 
 
 def render_output(results: list[VoiceResult]) -> None:
@@ -161,8 +180,7 @@ def render_output(results: list[VoiceResult]) -> None:
         if show_heading:
             st.markdown(f"### {_format_voice(result['voice'])}")
         st.audio(result["audio"], sample_rate=SAMPLE_RATE)
-    with st.expander("Phoneme Tokens"):
-        st.code(results[0]["phonemes"])
+    render_phonemes(results[0]["phonemes"])
 
 
 st.session_state.setdefault("current_output", None)
@@ -177,7 +195,6 @@ text_input = st.text_area(
     key="text_input",
     label_visibility="collapsed",
 )
-
 
 lang_col, gender_col, voice_col = st.columns(3)
 
@@ -201,8 +218,7 @@ with gender_col:
         on_change=_clear_voice_state,
     )
 
-gender_code = GENDERS[gender_label]
-voices = _filter_voices_by_gender(get_voices(lang_code), gender_code)
+voices = _filter_voices_by_gender(get_voices(lang_code), GENDERS[gender_label])
 
 with voice_col:
     selected_voices = st.multiselect(
@@ -225,9 +241,6 @@ speed = st.slider(
     key="speed",
 )
 
-with st.spinner("Loading model..."):
-    pipeline = load_pipeline()
-
 btn_col1, btn_col2 = st.columns(2)
 with btn_col1:
     generate_clicked = st.button("Generate", type="primary")
@@ -235,47 +248,26 @@ with btn_col2:
     tokenize_clicked = st.button("Tokenize")
 
 if generate_clicked:
-    warning = _validate_input(text_input)
-    if warning:
-        st.warning(warning)
+    if not text_input.strip():
+        st.warning("Enter text.")
     elif not selected_voices:
         st.warning("Select at least one voice.")
     else:
         try:
-            results: list[VoiceResult] = []
-            phonemes = tokenize_text(text_input, lang_code)
-            for v in selected_voices:
-                with st.status(f"Generating {v}...", expanded=True) as status:
-                    audio_chunks = []
-                    for i, audio_chunk in enumerate(
-                        generate_speech(
-                            text_input, v, pipeline, speed=speed, lang_code=lang_code
-                        ),
-                        1,
-                    ):
-                        audio_chunks.append(audio_chunk)
-                        st.write(f"Chunk {i}...")
-                    status.update(label=f"{v} complete!", state="complete")
-                results.append(
-                    {
-                        "audio": np.concatenate(audio_chunks),
-                        "voice": v,
-                        "phonemes": phonemes,
-                    }
-                )
-            st.session_state["current_output"] = results
+            with st.spinner("Loading model..."):
+                pipeline = load_pipeline()
+            st.session_state["current_output"] = generate_all(
+                text_input, selected_voices, pipeline, speed, lang_code
+            )
             st.rerun()
         except Exception as e:
             st.exception(e)
 
 if tokenize_clicked:
-    warning = _validate_input(text_input)
-    if warning:
-        st.warning(warning)
+    if not text_input.strip():
+        st.warning("Enter text.")
     else:
-        phonemes = tokenize_text(text_input, lang_code)
-        with st.expander("Phoneme Tokens", expanded=True):
-            st.code(phonemes)
+        render_phonemes(tokenize_text(text_input, lang_code), expanded=True)
 
 if st.session_state["current_output"] is not None:
     render_output(st.session_state["current_output"])
