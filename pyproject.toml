@@ -1,6 +1,6 @@
 [project]
 name = "kokoro-pipeline"
-version = "0.9.1"
+version = "0.10.1"
 description = "Streamlit web app for multilingual text-to-speech using Kokoro-82M (MLX, Mac only)"
 requires-python = ">=3.12"
 dependencies = [
