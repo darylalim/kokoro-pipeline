@@ -1,10 +1,12 @@
+import os
 import sys
+import tempfile
 from unittest.mock import MagicMock
 
 # Mock streamlit to prevent UI initialization on import
 _st = MagicMock()
 _st.cache_resource = lambda f: f
-_st.cache_data = lambda **_kw: lambda f: f
+_st.cache_data = lambda *args, **_kw: args[0] if args else (lambda f: f)
 _st.selectbox.side_effect = lambda label, **_kw: {
     "Language": "American English",
     "Gender": "All",
@@ -15,7 +17,6 @@ _st.slider.side_effect = lambda label, **_kw: {
 _st.button.return_value = False
 _st.text_area.return_value = ""
 _st.columns.side_effect = lambda n: [MagicMock() for _ in range(n)]
-_st.multiselect.return_value = []
 _st.session_state = {}
 sys.modules["streamlit"] = _st
 
@@ -43,20 +44,37 @@ sys.modules["misaki.ja"] = _misaki_ja
 sys.modules["misaki.zh"] = _misaki_zh
 sys.modules["misaki.espeak"] = _misaki_espeak
 
-# Mock huggingface_hub to prevent network calls on import
+# Mock huggingface_hub.snapshot_download by populating a tmpdir with empty
+# voice files so get_voices() can do a real directory walk.
+_voices_tmp = tempfile.mkdtemp(prefix="kokoro_test_voices_")
+os.makedirs(os.path.join(_voices_tmp, "voices"), exist_ok=True)
+for _fname in [
+    "af_heart.safetensors",
+    "af_bella.safetensors",
+    "am_adam.safetensors",
+    "bf_alice.safetensors",
+    "bm_daniel.safetensors",
+    "jf_alpha.safetensors",
+    "zf_xiaobei.safetensors",
+    "ef_dora.safetensors",
+    "ff_siwis.safetensors",
+    "hf_alpha.safetensors",
+    "if_sara.safetensors",
+    "pf_dora.safetensors",
+]:
+    open(os.path.join(_voices_tmp, "voices", _fname), "w").close()
+
 _hf_hub = MagicMock()
-_hf_hub.list_repo_tree.return_value = [
-    MagicMock(rfilename="voices/af_heart.safetensors"),
-    MagicMock(rfilename="voices/af_bella.safetensors"),
-    MagicMock(rfilename="voices/am_adam.safetensors"),
-    MagicMock(rfilename="voices/bf_alice.safetensors"),
-    MagicMock(rfilename="voices/bm_daniel.safetensors"),
-    MagicMock(rfilename="voices/jf_alpha.safetensors"),
-    MagicMock(rfilename="voices/zf_xiaobei.safetensors"),
-    MagicMock(rfilename="voices/ef_dora.safetensors"),
-    MagicMock(rfilename="voices/ff_siwis.safetensors"),
-    MagicMock(rfilename="voices/hf_alpha.safetensors"),
-    MagicMock(rfilename="voices/if_sara.safetensors"),
-    MagicMock(rfilename="voices/pf_dora.safetensors"),
-]
+_hf_hub.snapshot_download.return_value = _voices_tmp
 sys.modules["huggingface_hub"] = _hf_hub
+
+
+# huggingface_hub.errors.LocalEntryNotFoundError must be a real exception class
+# (the app catches it); MagicMock attributes can't be used in `except` clauses.
+class _MockLocalEntryNotFoundError(Exception):
+    pass
+
+
+_hf_hub_errors = MagicMock()
+_hf_hub_errors.LocalEntryNotFoundError = _MockLocalEntryNotFoundError
+sys.modules["huggingface_hub.errors"] = _hf_hub_errors

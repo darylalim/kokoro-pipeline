@@ -5,7 +5,6 @@ import pytest
 import streamlit as st
 
 from streamlit_app import (
-    CHAR_LIMIT,
     ESPEAK_LANGUAGES,
     GENDERS,
     LANGUAGES,
@@ -13,11 +12,14 @@ from streamlit_app import (
     REPO_ID,
     SAMPLE_RATE,
     VoiceResult,
-    _clear_voice_state,
     _create_g2p,
+    _default_voice,
     _filter_voices_by_gender,
     _format_voice,
-    generate_all,
+    _on_language_change,
+    _reset_selected_voice,
+    ensure_repo_downloaded,
+    generate_one,
     generate_speech,
     get_voices,
     load_pipeline,
@@ -26,6 +28,7 @@ from streamlit_app import (
     render_phonemes,
     tokenize_text,
 )
+from voice_grades import _GRADE_RANK, VOICE_GRADES, _grade_rank
 
 EXPECTED_LANGUAGES = [
     "American English",
@@ -61,9 +64,6 @@ class TestModelConstants:
     def test_repo_id(self) -> None:
         assert REPO_ID == "mlx-community/Kokoro-82M-bf16"
 
-    def test_char_limit(self) -> None:
-        assert CHAR_LIMIT == 5000
-
 
 class TestEspeakLanguages:
     def test_has_all_espeak_language_codes(self) -> None:
@@ -92,33 +92,10 @@ class TestGetVoices:
         voices = get_voices("x")
         assert voices == []
 
-    def test_females_sorted_before_males(self) -> None:
+    def test_sorted_by_quality_grade(self) -> None:
+        # af_heart (A) → af_bella (A-) → am_adam (F+)
         voices = get_voices("a")
-        first_male_idx = next(
-            (i for i, v in enumerate(voices) if v[1] == "m"), len(voices)
-        )
-        females = voices[:first_male_idx]
-        males = voices[first_male_idx:]
-        assert females == sorted(females)
-        assert males == sorted(males)
-        assert all(v[1] == "f" for v in females)
-        assert all(v[1] == "m" for v in males)
-
-    def test_returns_correct_voices(self) -> None:
-        voices = get_voices("a")
-        assert voices == ["af_bella", "af_heart", "am_adam"]
-
-    def test_skips_entries_without_rfilename(self) -> None:
-        from huggingface_hub import list_repo_tree
-
-        original = list_repo_tree.return_value  # type: ignore[union-attribute]
-        folder = MagicMock(spec=[])  # no rfilename attribute
-        list_repo_tree.return_value = [folder] + list(original)  # type: ignore[union-attribute]
-        try:
-            voices = get_voices("a")
-            assert "af_heart" in voices
-        finally:
-            list_repo_tree.return_value = original  # type: ignore[union-attribute]
+        assert voices == ["af_heart", "af_bella", "am_adam"]
 
 
 class TestLoadPipeline:
@@ -327,7 +304,7 @@ class TestGenerateSpeech:
         assert results[0].shape == (100,)
 
 
-class TestGenerateAll:
+class TestGenerateOne:
     def _model(self, audio_length: int = 100) -> MagicMock:
         model = MagicMock()
         chunk = MagicMock()
@@ -340,17 +317,17 @@ class TestGenerateAll:
 
         en.G2P.return_value = MagicMock(return_value=(phonemes, None))  # type: ignore[union-attribute]
 
-    def test_returns_one_result_per_voice(self) -> None:
+    def test_returns_voice_result(self) -> None:
         self._mock_tokenizer()
         model = self._model()
-        results = generate_all("hi", ["af_heart", "af_bella"], model, 1.0, "a")
-        assert [r["voice"] for r in results] == ["af_heart", "af_bella"]
+        result = generate_one("hi", "af_heart", model, 1.0, "a")
+        assert result["voice"] == "af_heart"
 
-    def test_phonemes_shared_across_results(self) -> None:
+    def test_phonemes_included(self) -> None:
         self._mock_tokenizer("test phonemes")
         model = self._model()
-        results = generate_all("hi", ["af_heart", "af_bella"], model, 1.0, "a")
-        assert all(r["phonemes"] == "test phonemes" for r in results)
+        result = generate_one("hi", "af_heart", model, 1.0, "a")
+        assert result["phonemes"] == "test phonemes"
 
     def test_audio_concatenated(self) -> None:
         self._mock_tokenizer()
@@ -359,21 +336,16 @@ class TestGenerateAll:
         c1.audio = np.ones(50, dtype=np.float32)
         c2.audio = np.zeros(30, dtype=np.float32)
         model.generate.return_value = [c1, c2]
-        results = generate_all("hi", ["af_heart"], model, 1.0, "a")
-        assert results[0]["audio"].shape == (80,)
+        result = generate_one("hi", "af_heart", model, 1.0, "a")
+        assert result["audio"].shape == (80,)
 
     def test_passes_speed_and_lang(self) -> None:
         self._mock_tokenizer()
         model = self._model()
-        generate_all("hi", ["af_heart"], model, 1.5, "b")
+        generate_one("hi", "af_heart", model, 1.5, "b")
         model.generate.assert_called_with(
             text="hi", voice="af_heart", speed=1.5, lang_code="b"
         )
-
-    def test_empty_voice_list_returns_empty(self) -> None:
-        self._mock_tokenizer()
-        results = generate_all("hi", [], MagicMock(), 1.0, "a")
-        assert results == []
 
 
 class TestRenderPhonemes:
@@ -405,62 +377,35 @@ class TestRenderOutput:
         st.expander.reset_mock()  # type: ignore[union-attribute]
         st.code.reset_mock()  # type: ignore[union-attribute]
 
-    def test_empty_results_returns_early(self) -> None:
+    def test_none_returns_early(self) -> None:
         self._reset_st_mocks()
-        render_output([])
+        render_output(None)
         st.audio.assert_not_called()  # type: ignore[union-attribute]
 
-    def test_single_result_renders_audio(self) -> None:
+    def test_renders_audio(self) -> None:
         self._reset_st_mocks()
-        render_output([self._make_result()])
+        render_output(self._make_result())
         st.audio.assert_called_once()  # type: ignore[union-attribute]
 
-    def test_single_result_does_not_render_heading(self) -> None:
+    def test_does_not_render_heading(self) -> None:
         self._reset_st_mocks()
-        render_output([self._make_result()])
+        render_output(self._make_result())
         st.markdown.assert_not_called()  # type: ignore[union-attribute]
-
-    def test_multi_renders_audio_per_voice(self) -> None:
-        self._reset_st_mocks()
-        results = [self._make_result("af_heart"), self._make_result("af_bella")]
-        render_output(results)
-        assert st.audio.call_count == 2  # type: ignore[union-attribute]
 
     def test_audio_passed_with_correct_sample_rate(self) -> None:
         self._reset_st_mocks()
-        render_output([self._make_result()])
+        render_output(self._make_result())
         call_kwargs = st.audio.call_args[1]  # type: ignore[union-attribute]
         assert call_kwargs["sample_rate"] == SAMPLE_RATE
 
-    def test_multi_renders_formatted_voice_headings(self) -> None:
+    def test_shows_phoneme_expander(self) -> None:
         self._reset_st_mocks()
-        results = [self._make_result("af_heart"), self._make_result("am_adam")]
-        render_output(results)
-        markdown_calls = [
-            call[0][0]
-            for call in st.markdown.call_args_list  # type: ignore[union-attribute]
-        ]
-        assert "### Heart (female)" in markdown_calls
-        assert "### Adam (male)" in markdown_calls
-
-    def test_single_result_shows_phoneme_expander(self) -> None:
-        self._reset_st_mocks()
-        render_output([self._make_result()])
+        render_output(self._make_result())
         st.expander.assert_called_once_with("Phoneme Tokens", expanded=False)  # type: ignore[union-attribute]
 
-    def test_single_result_shows_phonemes_in_code(self) -> None:
+    def test_shows_phonemes_in_code(self) -> None:
         self._reset_st_mocks()
-        render_output([self._make_result(phonemes="hɛlˈoʊ")])
-        st.code.assert_called_once_with("hɛlˈoʊ")  # type: ignore[union-attribute]
-
-    def test_multi_shows_single_shared_phoneme_expander(self) -> None:
-        self._reset_st_mocks()
-        results = [
-            self._make_result("af_heart", phonemes="hɛlˈoʊ"),
-            self._make_result("af_bella", phonemes="hɛlˈoʊ"),
-        ]
-        render_output(results)
-        st.expander.assert_called_once_with("Phoneme Tokens", expanded=False)  # type: ignore[union-attribute]
+        render_output(self._make_result(phonemes="hɛlˈoʊ"))
         st.code.assert_called_once_with("hɛlˈoʊ")  # type: ignore[union-attribute]
 
 
@@ -484,19 +429,23 @@ class TestPronunciationTips:
 
 class TestFormatVoice:
     def test_american_female(self) -> None:
-        assert _format_voice("af_heart") == "Heart (female)"
+        assert _format_voice("af_heart") == "Heart (female) — A"
 
     def test_american_male(self) -> None:
-        assert _format_voice("am_adam") == "Adam (male)"
+        assert _format_voice("am_adam") == "Adam (male) — F+"
 
     def test_british_female(self) -> None:
-        assert _format_voice("bf_alice") == "Alice (female)"
+        assert _format_voice("bf_alice") == "Alice (female) — D"
 
     def test_japanese_female(self) -> None:
-        assert _format_voice("jf_alpha") == "Alpha (female)"
+        assert _format_voice("jf_alpha") == "Alpha (female) — C+"
 
     def test_title_cases_name(self) -> None:
-        assert _format_voice("af_bella") == "Bella (female)"
+        assert _format_voice("af_bella") == "Bella (female) — A-"
+
+    def test_ungraded_voice_omits_grade_suffix(self) -> None:
+        # Spanish/Portuguese voices have no published grades
+        assert _format_voice("ef_dora") == "Dora (female)"
 
     def test_multi_underscore_name_keeps_all_parts(self) -> None:
         assert _format_voice("af_some_long_name") == "Some Long Name (female)"
@@ -528,16 +477,58 @@ class TestGenders:
         assert GENDERS["Male"] == "m"
 
 
-class TestClearVoiceState:
-    def test_clears_selected_voices(self) -> None:
-        st.session_state["selected_voices"] = ["af_heart", "am_adam"]
-        _clear_voice_state()
-        assert st.session_state["selected_voices"] == []
+class TestResetSelectedVoice:
+    def test_sets_default_for_american_english_all(self) -> None:
+        st.session_state["language"] = "American English"
+        st.session_state["gender"] = "All"
+        st.session_state["selected_voice"] = None
+        _reset_selected_voice()
+        assert st.session_state["selected_voice"] == "af_heart"
 
+    def test_sets_default_for_american_english_female(self) -> None:
+        st.session_state["language"] = "American English"
+        st.session_state["gender"] = "Female"
+        st.session_state["selected_voice"] = None
+        _reset_selected_voice()
+        assert st.session_state["selected_voice"] == "af_heart"
+
+    def test_falls_back_to_first_male_for_american_english_male(self) -> None:
+        st.session_state["language"] = "American English"
+        st.session_state["gender"] = "Male"
+        st.session_state["selected_voice"] = None
+        _reset_selected_voice()
+        assert st.session_state["selected_voice"] == "am_adam"
+
+    def test_falls_back_to_first_voice_for_other_language(self) -> None:
+        st.session_state["language"] = "Japanese"
+        st.session_state["gender"] = "All"
+        st.session_state["selected_voice"] = None
+        _reset_selected_voice()
+        assert st.session_state["selected_voice"] == "jf_alpha"
+
+    def test_does_not_clear_current_output(self) -> None:
+        # Gender change resets voice but should NOT discard prior generated output
+        st.session_state["language"] = "American English"
+        st.session_state["gender"] = "Male"
+        st.session_state["current_output"] = {"voice": "af_heart"}
+        _reset_selected_voice()
+        assert st.session_state["current_output"] == {"voice": "af_heart"}
+
+
+class TestOnLanguageChange:
     def test_clears_current_output(self) -> None:
-        st.session_state["current_output"] = [{"voice": "af_heart"}]
-        _clear_voice_state()
+        st.session_state["language"] = "American English"
+        st.session_state["gender"] = "All"
+        st.session_state["current_output"] = {"voice": "af_heart"}
+        _on_language_change()
         assert st.session_state["current_output"] is None
+
+    def test_resets_voice_to_new_default(self) -> None:
+        st.session_state["language"] = "Japanese"
+        st.session_state["gender"] = "All"
+        st.session_state["selected_voice"] = "af_heart"
+        _on_language_change()
+        assert st.session_state["selected_voice"] == "jf_alpha"
 
 
 class TestFilterVoicesByGender:
@@ -561,3 +552,70 @@ class TestFilterVoicesByGender:
     def test_preserves_input_order(self) -> None:
         voices = ["af_heart", "am_adam", "af_bella"]
         assert _filter_voices_by_gender(voices, "f") == ["af_heart", "af_bella"]
+
+
+class TestDefaultVoice:
+    def test_explicit_default_for_american_english_all(self) -> None:
+        assert _default_voice("a", None) == "af_heart"
+
+    def test_explicit_default_for_american_english_female(self) -> None:
+        assert _default_voice("a", "f") == "af_heart"
+
+    def test_falls_back_when_explicit_default_excluded_by_gender(self) -> None:
+        # af_heart is female; with male filter, fall back to first male voice by quality
+        assert _default_voice("a", "m") == "am_adam"
+
+    def test_falls_back_to_first_voice_for_unmapped_language(self) -> None:
+        assert _default_voice("j", None) == "jf_alpha"
+        assert _default_voice("e", None) == "ef_dora"
+
+    def test_returns_none_when_no_voices_match_filter(self) -> None:
+        # Japanese fixture has only jf_alpha (female); male filter yields no voices
+        assert _default_voice("j", "m") is None
+
+
+class TestGradeRank:
+    def test_grade_a_ranks_lower_than_grade_a_minus(self) -> None:
+        assert _grade_rank("af_heart") < _grade_rank("af_bella")
+
+    def test_grade_a_minus_ranks_lower_than_grade_f_plus(self) -> None:
+        assert _grade_rank("af_bella") < _grade_rank("am_adam")
+
+    def test_ungraded_voice_ranks_last(self) -> None:
+        # Spanish voices have no published grade
+        assert _grade_rank("ef_dora") > _grade_rank("am_adam")
+
+    def test_unknown_voice_ranks_last(self) -> None:
+        assert _grade_rank("xx_unknown") > _grade_rank("am_adam")
+
+    def test_known_specific_ranks(self) -> None:
+        # A = 2, A- = 3, F+ = 13, ungraded = 99
+        assert _grade_rank("af_heart") == 2
+        assert _grade_rank("af_bella") == 3
+        assert _grade_rank("am_adam") == 13
+        assert _grade_rank("ef_dora") == 99
+
+
+class TestEnsureRepoDownloaded:
+    def test_returns_path_string(self) -> None:
+        result = ensure_repo_downloaded()
+        assert isinstance(result, str)
+        assert result  # non-empty
+
+    def test_calls_snapshot_download(self) -> None:
+        from huggingface_hub import snapshot_download
+
+        ensure_repo_downloaded()
+        snapshot_download.assert_called()  # type: ignore[union-attribute]
+
+
+class TestVoiceGrades:
+    def test_all_keys_match_voice_id_pattern(self) -> None:
+        for voice in VOICE_GRADES:
+            assert "_" in voice, f"{voice!r} missing underscore"
+            assert len(voice) >= 4, f"{voice!r} too short"
+            assert voice[1] in ("f", "m"), f"{voice!r} has invalid gender code"
+
+    def test_all_grades_are_known(self) -> None:
+        for voice, grade in VOICE_GRADES.items():
+            assert grade in _GRADE_RANK, f"{voice!r} has unknown grade {grade!r}"
