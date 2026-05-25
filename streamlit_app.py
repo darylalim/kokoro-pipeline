@@ -1,8 +1,10 @@
+import io
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any, TypedDict
 
 import numpy as np
+import soundfile as sf
 import streamlit as st
 from huggingface_hub import snapshot_download
 from huggingface_hub.errors import LocalEntryNotFoundError
@@ -49,17 +51,13 @@ ESPEAK_LANGUAGES: dict[str, str] = {
     "p": "pt-br",
 }
 
-GENDERS: dict[str, str | None] = {
-    "All": None,
-    "Female": "f",
-    "Male": "m",
-}
+_GENDER_LABELS: dict[str, str] = {"f": "female", "m": "male"}
 
-_GENDER_LABELS = {code: label.lower() for label, code in GENDERS.items() if code}
+SPEED_OPTIONS: list[float] = [0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]
+DEFAULT_SPEED_INDEX: int = SPEED_OPTIONS.index(1.0)
 
-DEFAULT_VOICE_BY_LANG: dict[str, str] = {
-    "a": "af_heart",
-}
+AUDIO_CACHE_LIMIT: int = 20
+
 
 @st.cache_resource
 def ensure_repo_downloaded() -> str:
@@ -132,12 +130,55 @@ def _filter_voices_by_gender(voices: list[str], gender_code: str | None) -> list
     return [v for v in voices if v[1] == gender_code]
 
 
-def _default_voice(lang_code: str, gender_code: str | None) -> str | None:
-    explicit = DEFAULT_VOICE_BY_LANG.get(lang_code)
-    if explicit is not None and (gender_code is None or explicit[1] == gender_code):
-        return explicit
-    voices = _filter_voices_by_gender(get_voices(lang_code), gender_code)
-    return min(voices, key=_grade_rank) if voices else None
+def _gender_code_from_checkboxes(female: bool, male: bool) -> str | None:
+    if female == male:
+        return None
+    return "f" if female else "m"
+
+
+def _split_voices_for_display(
+    voices: list[str], selected: str | None, top_n: int = 6
+) -> tuple[list[str], list[str]]:
+    top = voices[:top_n]
+    tail = voices[top_n:]
+    if selected and selected in tail:
+        return top + [selected], [v for v in tail if v != selected]
+    return top, tail
+
+
+def _cache_key(voice: str, text: str, speed: float, lang_code: str) -> str:
+    return f"audio:{voice}:{lang_code}:{speed}:{hash(text)}"
+
+
+def _find_stale_cached_audio(
+    voice: str, text: str, lang_code: str
+) -> VoiceResult | None:
+    prefix = f"audio:{voice}:{lang_code}:"
+    suffix = f":{hash(text)}"
+    matches = [
+        k
+        for k in st.session_state
+        if isinstance(k, str) and k.startswith(prefix) and k.endswith(suffix)
+    ]
+    if not matches:
+        return None
+    return st.session_state[matches[-1]]
+
+
+def _evict_old_audio() -> None:
+    audio_keys = [
+        k for k in st.session_state if isinstance(k, str) and k.startswith("audio:")
+    ]
+    overflow = len(audio_keys) - AUDIO_CACHE_LIMIT
+    if overflow > 0:
+        for k in audio_keys[:overflow]:
+            del st.session_state[k]
+
+
+def _audio_to_wav_bytes(audio: np.ndarray) -> bytes:
+    buf = io.BytesIO()
+    sf.write(buf, audio, SAMPLE_RATE, format="WAV")
+    return buf.getvalue()
 
 
 def generate_speech(
@@ -177,15 +218,52 @@ def generate_one(
     return {"audio": np.concatenate(chunks), "voice": voice, "phonemes": phonemes}
 
 
-def _reset_selected_voice() -> None:
-    lang_code = LANGUAGES[st.session_state["language"]]
-    gender_code = GENDERS[st.session_state["gender"]]
-    st.session_state["selected_voice"] = _default_voice(lang_code, gender_code)
-
-
-def _on_language_change() -> None:
-    _reset_selected_voice()
-    st.session_state["current_output"] = None
+def render_voice_card(voice: str, text: str, lang_code: str) -> None:
+    with st.container(border=True):
+        cached = _find_stale_cached_audio(voice, text, lang_code)
+        indicator = "🔊 " if cached is not None else ""
+        st.markdown(f"**{indicator}{_format_voice(voice)}**")
+        speed_col, play_col = st.columns([1, 1])
+        with speed_col:
+            card_speed = st.selectbox(
+                "Speed",
+                options=SPEED_OPTIONS,
+                index=DEFAULT_SPEED_INDEX,
+                key=f"speed_{voice}",
+                label_visibility="collapsed",
+                format_func=lambda x: f"{x}x",
+            )
+        with play_col:
+            play_clicked = st.button(
+                "▶ Play",
+                key=f"play_{voice}",
+                type="primary",
+                use_container_width=True,
+                disabled=not text.strip(),
+            )
+        key = _cache_key(voice, text, card_speed, lang_code)
+        if play_clicked:
+            try:
+                pipeline = load_pipeline()
+                st.session_state[key] = generate_one(
+                    text, voice, pipeline, card_speed, lang_code
+                )
+                _evict_old_audio()
+            except Exception as e:
+                st.exception(e)
+        if key in st.session_state:
+            audio = st.session_state[key]["audio"]
+            st.audio(audio, sample_rate=SAMPLE_RATE)
+            st.download_button(
+                label="Download",
+                data=_audio_to_wav_bytes(audio),
+                file_name=f"{voice}_{card_speed}x.wav",
+                mime="audio/wav",
+                key=f"download_{voice}",
+            )
+        elif cached is not None:
+            st.caption("Click Play to refresh (speed changed)")
+            st.audio(cached["audio"], sample_rate=SAMPLE_RATE)
 
 
 def render_phonemes(phonemes: str, *, expanded: bool = False) -> None:
@@ -193,14 +271,11 @@ def render_phonemes(phonemes: str, *, expanded: bool = False) -> None:
         st.code(phonemes)
 
 
-def render_output(result: VoiceResult | None) -> None:
-    if result is None:
-        return
-    st.audio(result["audio"], sample_rate=SAMPLE_RATE)
-    render_phonemes(result["phonemes"])
+def _render_persistent_phonemes(text: str, lang_code: str) -> None:
+    saved = st.session_state.get("last_phonemes")
+    if saved and saved[0] == text and saved[1] == lang_code:
+        render_phonemes(saved[2], expanded=True)
 
-
-st.session_state.setdefault("current_output", None)
 
 st.title("Kokoro Pipeline")
 
@@ -210,97 +285,50 @@ except Exception:
     st.error("Could not download the Kokoro model. Connect to the internet and reload the page.")
     st.stop()
 
-text_input = st.text_area(
-    label="Text",
-    placeholder="Enter text to generate speech...",
-    height=200,
-    key="text_input",
+language = st.selectbox(
+    "Language",
+    options=list(LANGUAGES.keys()),
     label_visibility="collapsed",
+    key="language",
 )
-
-lang_col, gender_col, voice_col = st.columns(3)
-
-with lang_col:
-    language = st.selectbox(
-        "Language",
-        options=list(LANGUAGES.keys()),
-        label_visibility="collapsed",
-        key="language",
-        on_change=_on_language_change,
-    )
-
 lang_code = LANGUAGES[language]
 
-with gender_col:
-    gender_label = st.selectbox(
-        "Gender",
-        options=list(GENDERS.keys()),
+input_col, controls_col = st.columns(2)
+
+with input_col:
+    text_input = st.text_area(
+        label="Text",
+        placeholder="Start typing here or paste any text you want to turn into lifelike speech...",
+        height=500,
+        key="text_input",
         label_visibility="collapsed",
-        key="gender",
-        on_change=_reset_selected_voice,
     )
-
-voices = _filter_voices_by_gender(get_voices(lang_code), GENDERS[gender_label])
-
-if "selected_voice" not in st.session_state:
-    st.session_state["selected_voice"] = _default_voice(lang_code, GENDERS[gender_label])
-
-with voice_col:
-    if voices:
-        selected_voice = st.selectbox(
-            "Voice",
-            options=voices,
-            index=None,
-            format_func=_format_voice,
-            placeholder="Select a voice",
-            label_visibility="collapsed",
-            key="selected_voice",
+    tokenize_clicked = st.button("Tokenize", disabled=not text_input.strip())
+    if tokenize_clicked:
+        st.session_state["last_phonemes"] = (
+            text_input,
+            lang_code,
+            tokenize_text(text_input, lang_code),
         )
+    _render_persistent_phonemes(text_input, lang_code)
+    st.markdown("**Note:**")
+    st.markdown(PRONUNCIATION_TIPS)
+
+with controls_col:
+    gcol_f, gcol_m = st.columns(2)
+    with gcol_f:
+        female_checked = st.checkbox("Female", value=False, key="female")
+    with gcol_m:
+        male_checked = st.checkbox("Male", value=False, key="male")
+    gender_code = _gender_code_from_checkboxes(female_checked, male_checked)
+    voices = _filter_voices_by_gender(get_voices(lang_code), gender_code)
+    if voices:
+        visible, hidden = _split_voices_for_display(voices, None)
+        for voice in visible:
+            render_voice_card(voice, text_input, lang_code)
+        if hidden:
+            with st.expander("Show All Voices"):
+                for voice in hidden:
+                    render_voice_card(voice, text_input, lang_code)
     else:
         st.info("No voices match this filter.")
-        selected_voice = None
-
-speed = st.slider(
-    "Speed",
-    min_value=0.5,
-    max_value=2.0,
-    value=1.0,
-    step=0.1,
-    help="Speech rate multiplier. 1.0 is normal speed.",
-    key="speed",
-    disabled=not selected_voice,
-)
-
-btn_col1, btn_col2 = st.columns(2)
-with btn_col1:
-    generate_clicked = st.button("Generate", type="primary")
-with btn_col2:
-    tokenize_clicked = st.button("Tokenize")
-
-if generate_clicked:
-    if not text_input.strip():
-        st.warning("Enter text.")
-    elif not selected_voice:
-        st.warning("Select a voice.")
-    else:
-        try:
-            with st.spinner("Loading model..."):
-                pipeline = load_pipeline()
-            st.session_state["current_output"] = generate_one(
-                text_input, selected_voice, pipeline, speed, lang_code
-            )
-            st.rerun()
-        except Exception as e:
-            st.exception(e)
-
-if tokenize_clicked:
-    if not text_input.strip():
-        st.warning("Enter text.")
-    else:
-        render_phonemes(tokenize_text(text_input, lang_code), expanded=True)
-
-if st.session_state["current_output"] is not None:
-    render_output(st.session_state["current_output"])
-
-with st.expander("Tips"):
-    st.markdown(PRONUNCIATION_TIPS)

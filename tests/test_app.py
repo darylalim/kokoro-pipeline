@@ -1,31 +1,36 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 import streamlit as st
 
 from streamlit_app import (
+    AUDIO_CACHE_LIMIT,
+    DEFAULT_SPEED_INDEX,
     ESPEAK_LANGUAGES,
-    GENDERS,
     LANGUAGES,
     PRONUNCIATION_TIPS,
     REPO_ID,
     SAMPLE_RATE,
-    VoiceResult,
+    SPEED_OPTIONS,
+    _audio_to_wav_bytes,
+    _cache_key,
     _create_g2p,
-    _default_voice,
+    _evict_old_audio,
     _filter_voices_by_gender,
+    _find_stale_cached_audio,
     _format_voice,
-    _on_language_change,
-    _reset_selected_voice,
+    _gender_code_from_checkboxes,
+    _render_persistent_phonemes,
+    _split_voices_for_display,
     ensure_repo_downloaded,
     generate_one,
     generate_speech,
     get_voices,
     load_pipeline,
     load_tokenizer,
-    render_output,
     render_phonemes,
+    render_voice_card,
     tokenize_text,
 )
 from voice_grades import _GRADE_RANK, VOICE_GRADES, _grade_rank
@@ -348,6 +353,564 @@ class TestGenerateOne:
         )
 
 
+class TestSplitVoicesForDisplay:
+    LONG = [f"af_v{i}" for i in range(10)]  # 10 voices
+
+    def test_empty_returns_two_empty_lists(self) -> None:
+        assert _split_voices_for_display([], None) == ([], [])
+
+    def test_at_or_below_top_n_all_visible(self) -> None:
+        voices = ["af_heart", "af_bella", "am_adam"]
+        visible, hidden = _split_voices_for_display(voices, None)
+        assert visible == voices
+        assert hidden == []
+
+    def test_exactly_top_n_all_visible(self) -> None:
+        voices = self.LONG[:6]
+        visible, hidden = _split_voices_for_display(voices, None)
+        assert visible == voices
+        assert hidden == []
+
+    def test_more_than_top_n_splits_at_six(self) -> None:
+        visible, hidden = _split_voices_for_display(self.LONG, None)
+        assert visible == self.LONG[:6]
+        assert hidden == self.LONG[6:]
+
+    def test_selected_in_top_n_unchanged(self) -> None:
+        visible, hidden = _split_voices_for_display(self.LONG, "af_v2")
+        assert visible == self.LONG[:6]
+        assert hidden == self.LONG[6:]
+
+    def test_selected_in_tail_pinned_to_visible(self) -> None:
+        visible, hidden = _split_voices_for_display(self.LONG, "af_v8")
+        assert visible == self.LONG[:6] + ["af_v8"]
+        assert hidden == ["af_v6", "af_v7", "af_v9"]
+
+    def test_selected_none_uses_default_split(self) -> None:
+        visible, hidden = _split_voices_for_display(self.LONG, None)
+        assert visible == self.LONG[:6]
+        assert hidden == self.LONG[6:]
+
+    def test_custom_top_n(self) -> None:
+        visible, hidden = _split_voices_for_display(self.LONG, None, top_n=3)
+        assert visible == self.LONG[:3]
+        assert hidden == self.LONG[3:]
+
+    def test_preserves_input_order(self) -> None:
+        voices = ["c", "a", "b", "z", "y", "x", "m", "n"]
+        visible, hidden = _split_voices_for_display(voices, None)
+        assert visible == ["c", "a", "b", "z", "y", "x"]
+        assert hidden == ["m", "n"]
+
+
+class TestCacheKey:
+    def test_starts_with_audio_prefix(self) -> None:
+        assert _cache_key("af_heart", "hi", 1.0, "a").startswith("audio:")
+
+    def test_includes_voice(self) -> None:
+        assert "af_heart" in _cache_key("af_heart", "hi", 1.0, "a")
+
+    def test_includes_lang_code(self) -> None:
+        assert ":a:" in _cache_key("af_heart", "hi", 1.0, "a")
+
+    def test_includes_speed(self) -> None:
+        assert "1.5" in _cache_key("af_heart", "hi", 1.5, "a")
+
+    def test_same_inputs_same_key(self) -> None:
+        assert _cache_key("af_heart", "hi", 1.0, "a") == _cache_key("af_heart", "hi", 1.0, "a")
+
+    def test_distinguishes_text(self) -> None:
+        assert _cache_key("af_heart", "hello", 1.0, "a") != _cache_key("af_heart", "world", 1.0, "a")
+
+    def test_distinguishes_voice(self) -> None:
+        assert _cache_key("af_heart", "hi", 1.0, "a") != _cache_key("af_bella", "hi", 1.0, "a")
+
+    def test_distinguishes_speed(self) -> None:
+        assert _cache_key("af_heart", "hi", 1.0, "a") != _cache_key("af_heart", "hi", 1.5, "a")
+
+    def test_distinguishes_lang(self) -> None:
+        assert _cache_key("af_heart", "hi", 1.0, "a") != _cache_key("af_heart", "hi", 1.0, "b")
+
+
+class TestSpeedOptions:
+    def test_includes_default_one(self) -> None:
+        assert 1.0 in SPEED_OPTIONS
+
+    def test_min_is_zero_seven(self) -> None:
+        assert min(SPEED_OPTIONS) == 0.7
+
+    def test_max_is_one_five(self) -> None:
+        assert max(SPEED_OPTIONS) == 1.5
+
+    def test_sorted_ascending(self) -> None:
+        assert SPEED_OPTIONS == sorted(SPEED_OPTIONS)
+
+    def test_default_speed_index_points_to_one(self) -> None:
+        assert SPEED_OPTIONS[DEFAULT_SPEED_INDEX] == 1.0
+
+
+class TestAudioToWavBytes:
+    def test_returns_bytes(self) -> None:
+        audio = np.zeros(100, dtype=np.float32)
+        result = _audio_to_wav_bytes(audio)
+        assert isinstance(result, bytes)
+
+    def test_starts_with_riff_header(self) -> None:
+        audio = np.zeros(100, dtype=np.float32)
+        result = _audio_to_wav_bytes(audio)
+        assert result[:4] == b"RIFF"
+        assert result[8:12] == b"WAVE"
+
+    def test_handles_nonzero_audio(self) -> None:
+        audio = np.sin(np.linspace(0, 2 * np.pi, 1000)).astype(np.float32)
+        result = _audio_to_wav_bytes(audio)
+        assert isinstance(result, bytes)
+        assert len(result) > 1000  # header + payload
+
+
+class TestEvictOldAudio:
+    @staticmethod
+    def _clear_audio_cache() -> None:
+        for k in list(st.session_state):
+            if isinstance(k, str) and k.startswith("audio:"):
+                del st.session_state[k]
+
+    @staticmethod
+    def _fill_cache(n: int) -> None:
+        for i in range(n):
+            st.session_state[f"audio:v{i}:a:1.0:{i}"] = {
+                "audio": np.zeros(1, dtype=np.float32),
+                "voice": f"v{i}",
+                "phonemes": "x",
+            }
+
+    @staticmethod
+    def _count_audio_keys() -> int:
+        return sum(
+            1 for k in st.session_state if isinstance(k, str) and k.startswith("audio:")
+        )
+
+    def test_no_op_when_empty(self) -> None:
+        self._clear_audio_cache()
+        _evict_old_audio()
+        assert self._count_audio_keys() == 0
+
+    def test_no_op_when_under_limit(self) -> None:
+        self._clear_audio_cache()
+        self._fill_cache(AUDIO_CACHE_LIMIT - 1)
+        _evict_old_audio()
+        assert self._count_audio_keys() == AUDIO_CACHE_LIMIT - 1
+        self._clear_audio_cache()
+
+    def test_no_op_when_at_limit(self) -> None:
+        self._clear_audio_cache()
+        self._fill_cache(AUDIO_CACHE_LIMIT)
+        _evict_old_audio()
+        assert self._count_audio_keys() == AUDIO_CACHE_LIMIT
+        self._clear_audio_cache()
+
+    def test_evicts_oldest_when_over_limit(self) -> None:
+        self._clear_audio_cache()
+        self._fill_cache(AUDIO_CACHE_LIMIT + 1)
+        _evict_old_audio()
+        assert self._count_audio_keys() == AUDIO_CACHE_LIMIT
+        # The oldest key (v0) should be gone; the newest (v20) should remain
+        assert "audio:v0:a:1.0:0" not in st.session_state
+        assert f"audio:v{AUDIO_CACHE_LIMIT}:a:1.0:{AUDIO_CACHE_LIMIT}" in st.session_state
+        self._clear_audio_cache()
+
+    def test_evicts_multiple_when_far_over_limit(self) -> None:
+        self._clear_audio_cache()
+        self._fill_cache(AUDIO_CACHE_LIMIT + 5)
+        _evict_old_audio()
+        assert self._count_audio_keys() == AUDIO_CACHE_LIMIT
+        # First 5 keys evicted
+        for i in range(5):
+            assert f"audio:v{i}:a:1.0:{i}" not in st.session_state
+        self._clear_audio_cache()
+
+    def test_preserves_non_audio_session_keys(self) -> None:
+        self._clear_audio_cache()
+        st.session_state["language"] = "American English"
+        st.session_state["female"] = False
+        self._fill_cache(AUDIO_CACHE_LIMIT + 1)
+        _evict_old_audio()
+        assert st.session_state["language"] == "American English"
+        assert st.session_state["female"] is False
+        self._clear_audio_cache()
+
+
+class TestFindStaleCachedAudio:
+    @staticmethod
+    def _clear_audio_cache() -> None:
+        for k in list(st.session_state):
+            if isinstance(k, str) and k.startswith("audio:"):
+                del st.session_state[k]
+
+    def test_returns_none_when_no_cache(self) -> None:
+        self._clear_audio_cache()
+        assert _find_stale_cached_audio("af_heart", "hello", "a") is None
+
+    def test_finds_audio_at_different_speed(self) -> None:
+        self._clear_audio_cache()
+        key = _cache_key("af_heart", "hello", 0.7, "a")
+        payload = {
+            "audio": np.ones(10, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        st.session_state[key] = payload
+        assert _find_stale_cached_audio("af_heart", "hello", "a") is payload
+        self._clear_audio_cache()
+
+    def test_does_not_find_audio_for_different_text(self) -> None:
+        self._clear_audio_cache()
+        key = _cache_key("af_heart", "hello", 1.0, "a")
+        st.session_state[key] = {
+            "audio": np.ones(10, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        assert _find_stale_cached_audio("af_heart", "world", "a") is None
+        self._clear_audio_cache()
+
+    def test_does_not_find_audio_for_different_voice(self) -> None:
+        self._clear_audio_cache()
+        key = _cache_key("af_heart", "hello", 1.0, "a")
+        st.session_state[key] = {
+            "audio": np.ones(10, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        assert _find_stale_cached_audio("af_bella", "hello", "a") is None
+        self._clear_audio_cache()
+
+    def test_does_not_find_audio_for_different_lang(self) -> None:
+        self._clear_audio_cache()
+        key = _cache_key("af_heart", "hello", 1.0, "a")
+        st.session_state[key] = {
+            "audio": np.ones(10, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        assert _find_stale_cached_audio("af_heart", "hello", "b") is None
+        self._clear_audio_cache()
+
+    def test_returns_most_recent_when_multiple_speeds_cached(self) -> None:
+        self._clear_audio_cache()
+        key_07 = _cache_key("af_heart", "hello", 0.7, "a")
+        key_15 = _cache_key("af_heart", "hello", 1.5, "a")
+        st.session_state[key_07] = {
+            "audio": np.zeros(10, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        st.session_state[key_15] = {
+            "audio": np.ones(10, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        result = _find_stale_cached_audio("af_heart", "hello", "a")
+        assert result is not None
+        assert result["audio"][0] == 1.0
+        self._clear_audio_cache()
+
+
+class TestRenderVoiceCard:
+    @staticmethod
+    def _reset_mocks() -> None:
+        st.container.reset_mock()  # type: ignore[union-attribute]
+        st.markdown.reset_mock()  # type: ignore[union-attribute]
+        st.button.reset_mock()  # type: ignore[union-attribute]
+        st.button.return_value = False  # type: ignore[union-attribute]
+        st.selectbox.reset_mock()  # type: ignore[union-attribute]
+        st.audio.reset_mock()  # type: ignore[union-attribute]
+        st.caption.reset_mock()  # type: ignore[union-attribute]
+        st.download_button.reset_mock()  # type: ignore[union-attribute]
+        for k in list(st.session_state):
+            if isinstance(k, str) and k.startswith("audio:"):
+                del st.session_state[k]
+
+    def test_renders_bordered_container(self) -> None:
+        self._reset_mocks()
+        render_voice_card("af_heart", "hello", "a")
+        st.container.assert_called_once_with(border=True)  # type: ignore[union-attribute]
+
+    def test_renders_formatted_title(self) -> None:
+        self._reset_mocks()
+        render_voice_card("af_heart", "hello", "a")
+        st.markdown.assert_called_once_with("**Heart (female) — A**")  # type: ignore[union-attribute]
+
+    def test_badge_when_cached_at_current_speed(self) -> None:
+        self._reset_mocks()
+        st.session_state[_cache_key("af_heart", "hello", 1.0, "a")] = {
+            "audio": np.ones(10, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        render_voice_card("af_heart", "hello", "a")
+        st.markdown.assert_called_once_with("**🔊 Heart (female) — A**")  # type: ignore[union-attribute]
+
+    def test_badge_when_cached_at_other_speed(self) -> None:
+        self._reset_mocks()
+        st.session_state[_cache_key("af_heart", "hello", 0.7, "a")] = {
+            "audio": np.ones(10, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        render_voice_card("af_heart", "hello", "a")
+        st.markdown.assert_called_once_with("**🔊 Heart (female) — A**")  # type: ignore[union-attribute]
+
+    def test_no_badge_when_cache_for_different_text(self) -> None:
+        self._reset_mocks()
+        st.session_state[_cache_key("af_heart", "different_text", 1.0, "a")] = {
+            "audio": np.ones(10, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        render_voice_card("af_heart", "hello", "a")
+        st.markdown.assert_called_once_with("**Heart (female) — A**")  # type: ignore[union-attribute]
+
+    def test_no_badge_when_cache_for_different_voice(self) -> None:
+        self._reset_mocks()
+        st.session_state[_cache_key("af_bella", "hello", 1.0, "a")] = {
+            "audio": np.ones(10, dtype=np.float32),
+            "voice": "af_bella",
+            "phonemes": "x",
+        }
+        render_voice_card("af_heart", "hello", "a")
+        st.markdown.assert_called_once_with("**Heart (female) — A**")  # type: ignore[union-attribute]
+
+    def test_play_button_key_is_voice_specific(self) -> None:
+        self._reset_mocks()
+        render_voice_card("af_heart", "hello", "a")
+        assert st.button.call_args[1]["key"] == "play_af_heart"  # type: ignore[union-attribute]
+
+    def test_play_button_uses_primary_type(self) -> None:
+        self._reset_mocks()
+        render_voice_card("af_heart", "hello", "a")
+        assert st.button.call_args[1]["type"] == "primary"  # type: ignore[union-attribute]
+
+    def test_play_button_label(self) -> None:
+        self._reset_mocks()
+        render_voice_card("af_heart", "hello", "a")
+        assert st.button.call_args[0][0] == "▶ Play"  # type: ignore[union-attribute]
+
+    def test_play_disabled_when_text_empty(self) -> None:
+        self._reset_mocks()
+        render_voice_card("af_heart", "", "a")
+        assert st.button.call_args[1]["disabled"] is True  # type: ignore[union-attribute]
+
+    def test_play_enabled_when_text_nonempty(self) -> None:
+        self._reset_mocks()
+        render_voice_card("af_heart", "hello", "a")
+        assert st.button.call_args[1]["disabled"] is False  # type: ignore[union-attribute]
+
+    def test_renders_speed_selectbox(self) -> None:
+        self._reset_mocks()
+        render_voice_card("af_heart", "hello", "a")
+        speed_call = next(
+            (c for c in st.selectbox.call_args_list if c.args and c.args[0] == "Speed"),  # type: ignore[union-attribute]
+            None,
+        )
+        assert speed_call is not None
+        assert speed_call.kwargs["options"] == SPEED_OPTIONS
+        assert speed_call.kwargs["key"] == "speed_af_heart"
+
+    def test_speed_format_func_renders_x_suffix(self) -> None:
+        self._reset_mocks()
+        render_voice_card("af_heart", "hello", "a")
+        speed_call = next(
+            c for c in st.selectbox.call_args_list if c.args and c.args[0] == "Speed"  # type: ignore[union-attribute]
+        )
+        assert speed_call.kwargs["format_func"](1.0) == "1.0x"
+        assert speed_call.kwargs["format_func"](0.7) == "0.7x"
+
+    def test_renders_audio_when_cached(self) -> None:
+        self._reset_mocks()
+        key = _cache_key("af_heart", "hello", 1.0, "a")
+        st.session_state[key] = {
+            "audio": np.ones(100, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "hɛlˈoʊ",
+        }
+        render_voice_card("af_heart", "hello", "a")
+        st.audio.assert_called_once()  # type: ignore[union-attribute]
+        del st.session_state[key]
+
+    def test_no_audio_when_not_cached(self) -> None:
+        self._reset_mocks()
+        render_voice_card("af_heart", "never_cached_for_this_test", "a")
+        st.audio.assert_not_called()  # type: ignore[union-attribute]
+
+    def test_audio_uses_correct_sample_rate_when_cached(self) -> None:
+        self._reset_mocks()
+        key = _cache_key("af_heart", "hello", 1.0, "a")
+        st.session_state[key] = {
+            "audio": np.ones(100, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        render_voice_card("af_heart", "hello", "a")
+        assert st.audio.call_args[1]["sample_rate"] == SAMPLE_RATE  # type: ignore[union-attribute]
+        del st.session_state[key]
+
+    def test_renders_stale_audio_with_caption_when_only_other_speed_cached(self) -> None:
+        self._reset_mocks()
+        st.caption.reset_mock()  # type: ignore[union-attribute]
+        # Cache key uses speed=0.7, but the conftest selectbox mock returns 1.0
+        old_key = _cache_key("af_heart", "hello", 0.7, "a")
+        st.session_state[old_key] = {
+            "audio": np.ones(100, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        render_voice_card("af_heart", "hello", "a")
+        st.audio.assert_called_once()  # type: ignore[union-attribute]
+        st.caption.assert_called_once_with("Click Play to refresh (speed changed)")  # type: ignore[union-attribute]
+        del st.session_state[old_key]
+
+    def test_no_stale_caption_when_fresh_audio_cached(self) -> None:
+        self._reset_mocks()
+        st.caption.reset_mock()  # type: ignore[union-attribute]
+        # Both fresh (1.0) and stale (0.7) cached
+        fresh_key = _cache_key("af_heart", "hello", 1.0, "a")
+        stale_key = _cache_key("af_heart", "hello", 0.7, "a")
+        st.session_state[fresh_key] = {
+            "audio": np.ones(100, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        st.session_state[stale_key] = {
+            "audio": np.zeros(100, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        render_voice_card("af_heart", "hello", "a")
+        st.audio.assert_called_once()  # type: ignore[union-attribute]
+        st.caption.assert_not_called()  # type: ignore[union-attribute]
+        del st.session_state[fresh_key]
+        del st.session_state[stale_key]
+
+    def test_download_button_rendered_when_fresh_audio_cached(self) -> None:
+        self._reset_mocks()
+        st.session_state[_cache_key("af_heart", "hello", 1.0, "a")] = {
+            "audio": np.ones(100, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        render_voice_card("af_heart", "hello", "a")
+        st.download_button.assert_called_once()  # type: ignore[union-attribute]
+
+    def test_download_button_file_name_includes_voice_and_speed(self) -> None:
+        self._reset_mocks()
+        st.session_state[_cache_key("af_heart", "hello", 1.0, "a")] = {
+            "audio": np.ones(100, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        render_voice_card("af_heart", "hello", "a")
+        kwargs = st.download_button.call_args[1]  # type: ignore[union-attribute]
+        assert kwargs["file_name"] == "af_heart_1.0x.wav"
+        assert kwargs["mime"] == "audio/wav"
+        assert kwargs["key"] == "download_af_heart"
+
+    def test_download_button_data_is_bytes(self) -> None:
+        self._reset_mocks()
+        st.session_state[_cache_key("af_heart", "hello", 1.0, "a")] = {
+            "audio": np.ones(100, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        render_voice_card("af_heart", "hello", "a")
+        kwargs = st.download_button.call_args[1]  # type: ignore[union-attribute]
+        assert isinstance(kwargs["data"], bytes)
+        assert kwargs["data"][:4] == b"RIFF"
+
+    def test_no_download_button_for_stale_audio(self) -> None:
+        self._reset_mocks()
+        # Cached at speed 0.7 — stale relative to default speed 1.0
+        st.session_state[_cache_key("af_heart", "hello", 0.7, "a")] = {
+            "audio": np.ones(100, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        render_voice_card("af_heart", "hello", "a")
+        st.download_button.assert_not_called()  # type: ignore[union-attribute]
+
+    def test_no_download_button_when_no_cached_audio(self) -> None:
+        self._reset_mocks()
+        render_voice_card("af_heart", "hello", "a")
+        st.download_button.assert_not_called()  # type: ignore[union-attribute]
+
+    def test_click_populates_cache_and_calls_generate(self) -> None:
+        self._reset_mocks()
+        st.button.return_value = True  # type: ignore[union-attribute]
+        fake_result = {
+            "audio": np.ones(50, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "hɛlˈoʊ",
+        }
+        with (
+            patch("streamlit_app.load_pipeline", return_value="fake_pipeline") as mock_load,
+            patch("streamlit_app.generate_one", return_value=fake_result) as mock_gen,
+        ):
+            render_voice_card("af_heart", "hello", "a")
+        mock_load.assert_called_once()
+        mock_gen.assert_called_once_with(
+            "hello", "af_heart", "fake_pipeline", 1.0, "a"
+        )
+        expected_key = _cache_key("af_heart", "hello", 1.0, "a")
+        assert st.session_state[expected_key] is fake_result
+        del st.session_state[expected_key]
+
+    def test_click_handles_generate_error(self) -> None:
+        self._reset_mocks()
+        st.button.return_value = True  # type: ignore[union-attribute]
+        st.exception.reset_mock()  # type: ignore[union-attribute]
+        with (
+            patch("streamlit_app.load_pipeline"),
+            patch("streamlit_app.generate_one", side_effect=RuntimeError("boom")),
+        ):
+            render_voice_card("af_heart", "hello", "a")
+        st.exception.assert_called_once()  # type: ignore[union-attribute]
+        expected_key = _cache_key("af_heart", "hello", 1.0, "a")
+        assert expected_key not in st.session_state
+
+    def test_click_triggers_eviction(self) -> None:
+        self._reset_mocks()
+        st.button.return_value = True  # type: ignore[union-attribute]
+        fake_result = {
+            "audio": np.ones(50, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        with (
+            patch("streamlit_app.load_pipeline"),
+            patch("streamlit_app.generate_one", return_value=fake_result),
+            patch("streamlit_app._evict_old_audio") as mock_evict,
+        ):
+            render_voice_card("af_heart", "hello", "a")
+        mock_evict.assert_called_once()
+        expected_key = _cache_key("af_heart", "hello", 1.0, "a")
+        del st.session_state[expected_key]
+
+    def test_no_stale_audio_when_text_differs(self) -> None:
+        self._reset_mocks()
+        st.caption.reset_mock()  # type: ignore[union-attribute]
+        # Stale audio exists but for different text
+        old_key = _cache_key("af_heart", "different_text", 0.7, "a")
+        st.session_state[old_key] = {
+            "audio": np.ones(100, dtype=np.float32),
+            "voice": "af_heart",
+            "phonemes": "x",
+        }
+        render_voice_card("af_heart", "hello", "a")
+        st.audio.assert_not_called()  # type: ignore[union-attribute]
+        st.caption.assert_not_called()  # type: ignore[union-attribute]
+        del st.session_state[old_key]
+
+
 class TestRenderPhonemes:
     def test_renders_expander_and_code(self) -> None:
         st.expander.reset_mock()  # type: ignore[union-attribute]
@@ -362,51 +925,43 @@ class TestRenderPhonemes:
         st.expander.assert_called_once_with("Phoneme Tokens", expanded=True)  # type: ignore[union-attribute]
 
 
-class TestRenderOutput:
+class TestRenderPersistentPhonemes:
     @staticmethod
-    def _make_result(voice: str = "af_heart", phonemes: str = "hɛlˈoʊ") -> VoiceResult:
-        return {
-            "audio": np.ones(24000, dtype=np.float32),
-            "voice": voice,
-            "phonemes": phonemes,
-        }
-
-    def _reset_st_mocks(self) -> None:
-        st.audio.reset_mock()  # type: ignore[union-attribute]
-        st.markdown.reset_mock()  # type: ignore[union-attribute]
+    def _reset_mocks() -> None:
         st.expander.reset_mock()  # type: ignore[union-attribute]
         st.code.reset_mock()  # type: ignore[union-attribute]
+        st.session_state.pop("last_phonemes", None)
 
-    def test_none_returns_early(self) -> None:
-        self._reset_st_mocks()
-        render_output(None)
-        st.audio.assert_not_called()  # type: ignore[union-attribute]
+    def test_no_render_when_nothing_cached(self) -> None:
+        self._reset_mocks()
+        _render_persistent_phonemes("hello", "a")
+        st.expander.assert_not_called()  # type: ignore[union-attribute]
 
-    def test_renders_audio(self) -> None:
-        self._reset_st_mocks()
-        render_output(self._make_result())
-        st.audio.assert_called_once()  # type: ignore[union-attribute]
-
-    def test_does_not_render_heading(self) -> None:
-        self._reset_st_mocks()
-        render_output(self._make_result())
-        st.markdown.assert_not_called()  # type: ignore[union-attribute]
-
-    def test_audio_passed_with_correct_sample_rate(self) -> None:
-        self._reset_st_mocks()
-        render_output(self._make_result())
-        call_kwargs = st.audio.call_args[1]  # type: ignore[union-attribute]
-        assert call_kwargs["sample_rate"] == SAMPLE_RATE
-
-    def test_shows_phoneme_expander(self) -> None:
-        self._reset_st_mocks()
-        render_output(self._make_result())
-        st.expander.assert_called_once_with("Phoneme Tokens", expanded=False)  # type: ignore[union-attribute]
-
-    def test_shows_phonemes_in_code(self) -> None:
-        self._reset_st_mocks()
-        render_output(self._make_result(phonemes="hɛlˈoʊ"))
+    def test_renders_when_text_and_lang_match(self) -> None:
+        self._reset_mocks()
+        st.session_state["last_phonemes"] = ("hello", "a", "hɛlˈoʊ")
+        _render_persistent_phonemes("hello", "a")
+        st.expander.assert_called_once_with("Phoneme Tokens", expanded=True)  # type: ignore[union-attribute]
         st.code.assert_called_once_with("hɛlˈoʊ")  # type: ignore[union-attribute]
+
+    def test_no_render_when_text_differs(self) -> None:
+        self._reset_mocks()
+        st.session_state["last_phonemes"] = ("hello", "a", "hɛlˈoʊ")
+        _render_persistent_phonemes("world", "a")
+        st.expander.assert_not_called()  # type: ignore[union-attribute]
+
+    def test_no_render_when_lang_differs(self) -> None:
+        self._reset_mocks()
+        st.session_state["last_phonemes"] = ("hello", "a", "hɛlˈoʊ")
+        _render_persistent_phonemes("hello", "b")
+        st.expander.assert_not_called()  # type: ignore[union-attribute]
+
+    def test_renders_again_when_returning_to_matched_text(self) -> None:
+        # User typed "hello", tokenized, switched text, switched back
+        self._reset_mocks()
+        st.session_state["last_phonemes"] = ("hello", "a", "hɛlˈoʊ")
+        _render_persistent_phonemes("hello", "a")
+        st.expander.assert_called_once()  # type: ignore[union-attribute]
 
 
 class TestPronunciationTips:
@@ -457,78 +1012,18 @@ class TestFormatVoice:
         assert _format_voice("af") == "af"
 
 
-class TestGenders:
-    def test_has_all_option(self) -> None:
-        assert "All" in GENDERS
+class TestGenderCodeFromCheckboxes:
+    def test_both_checked_returns_none(self) -> None:
+        assert _gender_code_from_checkboxes(True, True) is None
 
-    def test_has_female(self) -> None:
-        assert "Female" in GENDERS
+    def test_neither_checked_returns_none(self) -> None:
+        assert _gender_code_from_checkboxes(False, False) is None
 
-    def test_has_male(self) -> None:
-        assert "Male" in GENDERS
+    def test_only_female_returns_f(self) -> None:
+        assert _gender_code_from_checkboxes(True, False) == "f"
 
-    def test_all_maps_to_none(self) -> None:
-        assert GENDERS["All"] is None
-
-    def test_female_maps_to_f(self) -> None:
-        assert GENDERS["Female"] == "f"
-
-    def test_male_maps_to_m(self) -> None:
-        assert GENDERS["Male"] == "m"
-
-
-class TestResetSelectedVoice:
-    def test_sets_default_for_american_english_all(self) -> None:
-        st.session_state["language"] = "American English"
-        st.session_state["gender"] = "All"
-        st.session_state["selected_voice"] = None
-        _reset_selected_voice()
-        assert st.session_state["selected_voice"] == "af_heart"
-
-    def test_sets_default_for_american_english_female(self) -> None:
-        st.session_state["language"] = "American English"
-        st.session_state["gender"] = "Female"
-        st.session_state["selected_voice"] = None
-        _reset_selected_voice()
-        assert st.session_state["selected_voice"] == "af_heart"
-
-    def test_falls_back_to_first_male_for_american_english_male(self) -> None:
-        st.session_state["language"] = "American English"
-        st.session_state["gender"] = "Male"
-        st.session_state["selected_voice"] = None
-        _reset_selected_voice()
-        assert st.session_state["selected_voice"] == "am_adam"
-
-    def test_falls_back_to_first_voice_for_other_language(self) -> None:
-        st.session_state["language"] = "Japanese"
-        st.session_state["gender"] = "All"
-        st.session_state["selected_voice"] = None
-        _reset_selected_voice()
-        assert st.session_state["selected_voice"] == "jf_alpha"
-
-    def test_does_not_clear_current_output(self) -> None:
-        # Gender change resets voice but should NOT discard prior generated output
-        st.session_state["language"] = "American English"
-        st.session_state["gender"] = "Male"
-        st.session_state["current_output"] = {"voice": "af_heart"}
-        _reset_selected_voice()
-        assert st.session_state["current_output"] == {"voice": "af_heart"}
-
-
-class TestOnLanguageChange:
-    def test_clears_current_output(self) -> None:
-        st.session_state["language"] = "American English"
-        st.session_state["gender"] = "All"
-        st.session_state["current_output"] = {"voice": "af_heart"}
-        _on_language_change()
-        assert st.session_state["current_output"] is None
-
-    def test_resets_voice_to_new_default(self) -> None:
-        st.session_state["language"] = "Japanese"
-        st.session_state["gender"] = "All"
-        st.session_state["selected_voice"] = "af_heart"
-        _on_language_change()
-        assert st.session_state["selected_voice"] == "jf_alpha"
+    def test_only_male_returns_m(self) -> None:
+        assert _gender_code_from_checkboxes(False, True) == "m"
 
 
 class TestFilterVoicesByGender:
@@ -552,26 +1047,6 @@ class TestFilterVoicesByGender:
     def test_preserves_input_order(self) -> None:
         voices = ["af_heart", "am_adam", "af_bella"]
         assert _filter_voices_by_gender(voices, "f") == ["af_heart", "af_bella"]
-
-
-class TestDefaultVoice:
-    def test_explicit_default_for_american_english_all(self) -> None:
-        assert _default_voice("a", None) == "af_heart"
-
-    def test_explicit_default_for_american_english_female(self) -> None:
-        assert _default_voice("a", "f") == "af_heart"
-
-    def test_falls_back_when_explicit_default_excluded_by_gender(self) -> None:
-        # af_heart is female; with male filter, fall back to first male voice by quality
-        assert _default_voice("a", "m") == "am_adam"
-
-    def test_falls_back_to_first_voice_for_unmapped_language(self) -> None:
-        assert _default_voice("j", None) == "jf_alpha"
-        assert _default_voice("e", None) == "ef_dora"
-
-    def test_returns_none_when_no_voices_match_filter(self) -> None:
-        # Japanese fixture has only jf_alpha (female); male filter yields no voices
-        assert _default_voice("j", "m") is None
 
 
 class TestGradeRank:

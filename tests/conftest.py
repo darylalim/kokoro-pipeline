@@ -9,14 +9,17 @@ _st.cache_resource = lambda f: f
 _st.cache_data = lambda *args, **_kw: args[0] if args else (lambda f: f)
 _st.selectbox.side_effect = lambda label, **_kw: {
     "Language": "American English",
-    "Gender": "All",
-}.get(label, MagicMock())
-_st.slider.side_effect = lambda label, **_kw: {
     "Speed": 1.0,
+}.get(label, MagicMock())
+_st.checkbox.side_effect = lambda label, **_kw: {
+    "Female": False,
+    "Male": False,
 }.get(label, MagicMock())
 _st.button.return_value = False
 _st.text_area.return_value = ""
-_st.columns.side_effect = lambda n: [MagicMock() for _ in range(n)]
+_st.columns.side_effect = lambda spec: [
+    MagicMock() for _ in range(spec if isinstance(spec, int) else len(spec))
+]
 _st.session_state = {}
 sys.modules["streamlit"] = _st
 
