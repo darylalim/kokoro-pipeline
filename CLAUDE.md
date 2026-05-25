@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Streamlit web app for generating multilingual speech using [Kokoro-82M-bf16](https://huggingface.co/mlx-community/Kokoro-82M-bf16), a text-to-speech model optimized for Apple Silicon. Mac only.
+Generate multilingual speech with the [Hexgrad Kokoro model](https://huggingface.co/hexgrad/Kokoro-82M) on Apple Silicon with MLX.
 
 ## Installation
 
@@ -32,7 +32,7 @@ uv run streamlit run streamlit_app.py
 
 **System:** `espeak-ng`
 
-**Runtime:** `en-core-web-sm` (pinned URL; update wheel URL if spaCy is upgraded), `misaki[ja]`, `misaki[zh]`, `mlx-audio`, `numpy`, `streamlit`
+**Runtime:** `en-core-web-sm` (pinned URL; update wheel URL if spaCy is upgraded), `espeakng-loader`, `misaki[ja]`, `misaki[zh]`, `mlx-audio`, `num2words`, `numpy`, `phonemizer-fork`, `spacy`, `streamlit`. The English G2P stack (`spacy`, `num2words`, `phonemizer-fork`, `espeakng-loader`) is pulled in directly rather than via `misaki[en]` to skip its heavy ML extras (`torch`, `transformers`, `spacy-curated-transformers`).
 
 **Dev:** `ruff`, `ty`, `pytest`
 
@@ -44,7 +44,7 @@ uv run streamlit run streamlit_app.py
 
 ### Files
 
-- `streamlit_app.py` — main app: text input, language/gender/voice selection (one voice per request), speed control, audio playback, phoneme tokenization, pronunciation tips
+- `streamlit_app.py` — main app: language selector, text input + Tokenize button + pronunciation note (left column), gender checkboxes + per-card voice grid with per-card Play button + speed dropdown + inline audio playback (right column)
 - `voice_grades.py` — quality-grade table (`VOICE_GRADES`), rank table (`_GRADE_RANK`), and `_grade_rank` helper extracted from the Kokoro model card; consumed by the voice picker for sorting and labeling
 - `tests/conftest.py` — mocks `streamlit`, `mlx_audio`, `misaki`, and `huggingface_hub` for import
 - `tests/test_app.py` — unit tests
@@ -53,20 +53,20 @@ uv run streamlit run streamlit_app.py
 
 - `ensure_repo_downloaded` — calls `huggingface_hub.snapshot_download` once per process; tries `local_files_only=True` first and only shows the download spinner when files are missing
 - `get_voices` — walks the local snapshot's `voices/` directory and returns voice IDs for the given language, sorted by quality grade (best first, ties alphabetical)
-- `generate_speech` — generator yielding audio arrays per chunk; takes `lang_code` parameter
-- `generate_one` — runs `generate_speech` for the chosen voice inside an `st.status` block, concatenates chunks, and returns a single `VoiceResult`
-- `load_pipeline` — cached global model via `mlx_audio.tts.utils.load_model` (no lang_code parameter); called lazily on first Generate click
+- `load_pipeline` — cached global model via `mlx_audio.tts.utils.load_model`; called lazily on the first per-card Play click
 - `load_tokenizer` — cached G2P tokenizer via direct `misaki` usage per language
 - `_create_g2p` — creates language-specific misaki G2P object
 - `tokenize_text` — returns phoneme string without running inference
-- `_format_voice` — formats a raw voice ID into a display label with optional grade suffix (e.g. `af_heart` → `"Heart (female) — A"`); ungraded voices show just `"Name (gender)"`. Used as `format_func` on voice widgets.
+- `generate_speech` — generator yielding audio arrays per chunk; takes `lang_code` parameter
+- `generate_one` — runs `generate_speech` inside an `st.status` block, concatenates chunks, returns a single `VoiceResult`
+- `_format_voice` — formats a raw voice ID into a display label with optional grade suffix (e.g. `af_heart` → `"Heart (female) — A"`); ungraded voices show just `"Name (gender)"`. Used as the card title.
 - `_grade_rank` — maps a voice ID to its numeric sort rank via `VOICE_GRADES` + `_GRADE_RANK` (both in `voice_grades.py`); ungraded voices get a sentinel rank that sorts last
-- `_filter_voices_by_gender` — narrows a voice list to one gender (`"f"` or `"m"`), or returns unchanged for `None` (i.e. "All")
-- `_default_voice` — returns a default voice for the current language/gender combination: prefers the `DEFAULT_VOICE_BY_LANG` entry when it matches the gender filter (e.g. `"af_heart"` for American English), otherwise falls back to the highest-graded voice in the gender-filtered list. Returns `None` only when no voices match.
-- `_reset_selected_voice` — `on_change` callback for the Gender selectbox; resets `selected_voice` to the new default but leaves `current_output` intact
-- `_on_language_change` — `on_change` callback for the Language selectbox; resets `selected_voice` and clears `current_output` (prior audio belongs to a different language context)
+- `_filter_voices_by_gender` — narrows a voice list to one gender (`"f"` or `"m"`), or returns unchanged for `None` (no filter)
+- `_gender_code_from_checkboxes` — maps Female/Male checkbox state to a gender code: both checked or both unchecked → `None` (no filter); only Female → `"f"`; only Male → `"m"`
+- `_split_voices_for_display` — splits a voice list into `(visible, hidden)` — top N (default 6) visible, rest hidden. If a selected voice would land in the tail, pins it into the visible section.
+- `_cache_key` — builds the session-state key for a generated audio: `f"audio:{voice}:{lang_code}:{speed}:{hash(text)}"`. Cache invalidates implicitly when any of voice/text/speed/lang changes.
+- `render_voice_card` — renders one bordered card per voice: title via `_format_voice`, a 50/50 inner row with a speed selectbox on the left and a Play button on the right, and an `st.audio` player below when audio for `_cache_key(...)` is in session state. Play click runs `generate_one` and stores the result.
 - `render_phonemes` — renders the `Phoneme Tokens` expander with `st.code`; `expanded` flag toggles open state
-- `render_output` — displays the audio player for the current `VoiceResult` and calls `render_phonemes` once; returns early if `result is None`
 
 ### Model
 
@@ -86,29 +86,44 @@ On first launch, `ensure_repo_downloaded` calls `huggingface_hub.snapshot_downlo
 - `@st.cache_resource` caches the model globally, tokenizers per language, and the snapshot path returned by `ensure_repo_downloaded`
 - `@st.cache_data` caches voice lists per language code (local filesystem walk, no TTL needed)
 - `ensure_repo_downloaded` first attempts `snapshot_download(..., local_files_only=True)` and only shows the spinner + downloads when the local cache is incomplete
-- `load_pipeline()` is deferred until the user clicks Generate, so initial page render is not blocked by model load
+- `load_pipeline()` is deferred until the first per-card Play click, so initial page render is not blocked by model load
 - `generate_speech` uses `np.asarray(..., dtype=np.float32)` to avoid copying chunks that are already float32
+- Per-card audio results are stored in `st.session_state` keyed by `_cache_key`, so re-renders triggered by other interactions don't regenerate audio
 
 ### UI
 
-- Text input with `label_visibility="collapsed"` (no visible label) and no character cap
-- Language, Gender, and Voice selectors rendered in a 3-column row with `label_visibility="collapsed"` (no visible labels)
-- Gender selectbox offers `All` / `Female` / `Male` (mapped via the `GENDERS` constant)
-- Voice display uses `_format_voice` to transform raw IDs (e.g. `af_heart`) into labels with quality grade (e.g. `"Heart (female) — A"`); ungraded voices show without the grade suffix
-- Voices from `get_voices` are sorted by quality grade (best first, ties alphabetical); `_filter_voices_by_gender` narrows them to the selected gender while preserving the quality order
-- Voice is a single selectbox (`index=None` with a "Select a voice" placeholder when no default applies). Defaults via `_default_voice`: prefers `DEFAULT_VOICE_BY_LANG` (`af_heart` for American English), otherwise the highest-graded voice for the current language/gender. Changing Language calls `_on_language_change` (resets voice and clears prior output); changing Gender calls `_reset_selected_voice` (resets voice only, preserves output). When the filter yields no voices, an `st.info("No voices match this filter.")` renders in place of the selectbox.
-- Speed slider (0.5–2.0, default 1.0); `disabled=not selected_voice` so it's inert when nothing is picked
-- Two-button row: Generate (primary), Tokenize
-- On initial render, `ensure_repo_downloaded` may show `st.spinner("Downloading Kokoro model and voices (one-time, ~160 MB)...")` if the local HuggingFace cache is incomplete; otherwise no spinner appears
+**Layout (top to bottom):**
+1. Full-width `Language` selectbox at the top (hidden label)
+2. Two-column split: input panel (left) + controls and voice cards (right). Generated audio renders inline inside each card — no separate output row.
+
+**Left column:**
+- `st.text_area` (500 px tall, no character cap, hidden label) with placeholder `"Start typing here or paste any text you want to turn into lifelike speech..."`
+- `Tokenize` button immediately below, `disabled=not text.strip()`; clicking calls `render_phonemes(..., expanded=True)` inline
+- `**Note:**` markdown heading followed by `PRONUNCIATION_TIPS` body — always visible, no expander
+
+**Right column:**
+- Two checkboxes row: `Female` and `Male` in side-by-side columns via `st.columns(2)`, both default unchecked. Both-equal (both checked or both unchecked) → `None` (no filter, show all); only one checked filters to that gender. Translation handled by `_gender_code_from_checkboxes`.
+- Voice cards rendered via `render_voice_card`. Top 6 voices (by grade, via `_split_voices_for_display`) visible directly; the rest sit behind an `st.expander("Show All Voices")`
+- When no voices match the gender filter, `st.info("No voices match this filter.")` renders in place
+
+**Voice card (per voice, via `render_voice_card`):**
+- `st.container(border=True)` frame
+- Bold title via `_format_voice` (e.g. `**Heart (female) — A**`)
+- 50/50 inner row via `st.columns([1, 1])`: speed selectbox on the left, Play button on the right
+- Speed selectbox: `SPEED_OPTIONS` (`[0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]`), default `1.0`, formatted as `"{x}x"` (e.g. `1.0x`), keyed `f"speed_{voice}"`, label hidden
+- Play button: `▶ Play`, `type="primary"`, `use_container_width=True`, keyed `f"play_{voice}"`, `disabled=not text.strip()`. Click handler loads the model (cached), runs `generate_one`, and stores the result in `st.session_state[_cache_key(voice, text, speed, lang_code)]`
+- An `st.audio` player embeds inline below the row when that cache key is present in session state — multiple voices' audios coexist for A/B comparison on the same text
+
+**Audio cache lifecycle:**
+- Cache key includes voice, text, speed, lang_code — changing any creates a new key, so the audio player disappears until Play is clicked again (correct: different inputs → different audio)
+- Cached audios persist across reruns triggered by other interactions
+- No explicit eviction — the cache grows with each (voice, text, speed, lang) tuple played, which is fine for typical sessions
+
+**Behavior:**
+- On initial render, `ensure_repo_downloaded` may show `st.spinner("Downloading Kokoro model and voices (one-time, ~160 MB)...")` when the local HuggingFace cache is incomplete; otherwise no spinner appears
 - If the first-launch download fails (e.g. offline with no cache), the script shows `st.error(...)` and halts via `st.stop()` instead of leaking a Python traceback
-- Chunk-by-chunk generation progress via `st.status` (rendered inside `generate_one`)
-- Model loads lazily on the first Generate click, shown via `st.spinner("Loading model...")`
-- Tokenize button: shows phoneme tokens without generating audio (uses misaki G2P directly via `render_phonemes`)
-- Phoneme token expander rendered below the audio output via `render_phonemes`, using the result's phonemes
-- Generated audio displayed in browser player via `st.audio` (built-in download available from the player's menu)
-- Errors shown with `st.exception()`
-- "Tips" expander at the bottom of the page shows Kokoro pronunciation syntax (`PRONUNCIATION_TIPS` constant)
-- Session state (`st.session_state`) persists current output across reruns
+- Chunk-by-chunk generation progress appears via `st.status` inside the active card during the Play-triggered run
+- Per-card errors surface via `st.exception()` inside the card; other cards remain functional
 
 ## Resources
 

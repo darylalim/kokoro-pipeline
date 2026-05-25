@@ -1,19 +1,19 @@
 # Kokoro Pipeline
 
-Streamlit web app for generating multilingual speech using [Kokoro-82M-bf16](https://huggingface.co/mlx-community/Kokoro-82M-bf16), a text-to-speech model optimized for Apple Silicon via [mlx-audio](https://github.com/Blaizzy/mlx-audio). Mac only.
+Generate multilingual speech with the [Hexgrad Kokoro model](https://huggingface.co/hexgrad/Kokoro-82M) on Apple Silicon with MLX.
 
 ## Features
 
 - 9 supported languages (American English, British English, Spanish, French, Hindi, Italian, Japanese, Brazilian Portuguese, Mandarin Chinese)
 - One-time model + voice download on first launch (~160 MB); fully offline thereafter
-- Voice picker sorted by quality grade (best first), with grade shown in the label (e.g. "Heart (female) — A")
-- Sensible default voice per language (`af_heart` for American English; highest-graded available voice otherwise)
-- Gender filter (All / Female / Male) narrows the voice list
-- Adjustable speech speed (0.5x–2.0x)
-- In-browser audio playback (download via the audio player's menu)
-- Chunk-by-chunk generation progress via `st.status`
-- Phoneme token display with standalone Tokenize button
-- Tips panel with Kokoro-specific pronunciation syntax (custom phonemes, stress, intonation)
+- Voice cards sorted by quality grade (best first), with grade in each title (e.g. "Heart (female) — A"); top 6 visible, rest behind a "Show All Voices" expander
+- Gender filter via Female / Male checkboxes; either alone filters, neither or both shows all
+- Per-card Play button generates audio on demand and embeds an audio player inline — A/B-compare multiple voices on the same text
+- Per-card speed dropdown (0.7x–1.5x in 0.1 steps); cached audio invalidates when speed changes
+- Chunk-by-chunk generation progress via `st.status` inside the active card
+- Phoneme token display via standalone Tokenize button (renders inline below the text input)
+- Pronunciation note always visible with Kokoro-specific syntax (custom phonemes, stress, intonation)
+- In-browser audio playback per card (download via the audio player's menu)
 
 ## Requirements
 
