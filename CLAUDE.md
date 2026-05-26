@@ -12,6 +12,7 @@ Requires `espeak-ng` system dependency.
 
 ```bash
 uv sync --group dev
+uv run python -m unidic download   # one-time, ~1 GB, only needed for Japanese
 uv run streamlit run streamlit_app.py
 ```
 
@@ -32,7 +33,7 @@ uv run streamlit run streamlit_app.py
 
 **System:** `espeak-ng`
 
-**Runtime:** `en-core-web-sm` (pinned URL; update wheel URL if spaCy is upgraded), `espeakng-loader`, `misaki[ja]`, `misaki[zh]`, `mlx-audio`, `num2words`, `numpy`, `phonemizer-fork`, `spacy`, `streamlit`. The English G2P stack (`spacy`, `num2words`, `phonemizer-fork`, `espeakng-loader`) is pulled in directly rather than via `misaki[en]` to skip its heavy ML extras (`torch`, `transformers`, `spacy-curated-transformers`).
+**Runtime:** `en-core-web-sm` (pinned URL; update wheel URL if spaCy is upgraded), `espeakng-loader`, `misaki[ja]`, `misaki[zh]`, `mlx-audio`, `num2words`, `numpy`, `phonemizer-fork`, `soundfile`, `spacy`, `streamlit`. The English G2P stack (`spacy`, `num2words`, `phonemizer-fork`, `espeakng-loader`) is pulled in directly rather than via `misaki[en]` to skip its heavy ML extras (`torch`, `transformers`, `spacy-curated-transformers`). Japanese requires a one-time UniDic dictionary download (`uv run python -m unidic download`, ~1 GB).
 
 **Dev:** `ruff`, `ty`, `pytest`
 
@@ -44,10 +45,11 @@ uv run streamlit run streamlit_app.py
 
 ### Files
 
-- `streamlit_app.py` — main app: language selector, text input + Tokenize button + pronunciation note (left column), gender checkboxes + per-card voice grid with per-card Play button + speed dropdown + inline audio playback (right column)
+- `streamlit_app.py` — main app: language selector, text input + per-language sample buttons + Tokenize button + utterance-length caption + pronunciation note (left column), gender checkboxes + per-card voice grid with per-card Play button + speed dropdown + inline audio playback + download button (right column)
 - `voice_grades.py` — quality-grade table (`VOICE_GRADES`), rank table (`_GRADE_RANK`), and `_grade_rank` helper extracted from the Kokoro model card; consumed by the voice picker for sorting and labeling
+- `samples/` — bundled public-domain sample text per language (9 directories × 3 files: `random.txt` quote pool plus two literary excerpts); referenced by `SAMPLE_BUTTONS` and read by `_load_sample`
 - `tests/conftest.py` — mocks `streamlit`, `mlx_audio`, `misaki`, and `huggingface_hub` for import
-- `tests/test_app.py` — unit tests
+- `tests/test_streamlit_app.py` — unit tests
 
 ### Key Functions
 
@@ -67,6 +69,13 @@ uv run streamlit run streamlit_app.py
 - `_cache_key` — builds the session-state key for a generated audio: `f"audio:{voice}:{lang_code}:{speed}:{hash(text)}"`. Cache invalidates implicitly when any of voice/text/speed/lang changes.
 - `render_voice_card` — renders one bordered card per voice: title via `_format_voice`, a 50/50 inner row with a speed selectbox on the left and a Play button on the right, and an `st.audio` player below when audio for `_cache_key(...)` is in session state. Play click runs `generate_one` and stores the result.
 - `render_phonemes` — renders the `Phoneme Tokens` expander with `st.code`; `expanded` flag toggles open state
+- `_estimate_phonemes` — cheap char-count × per-language multiplier (English 0.85, Romance/Portuguese 0.90, Hindi/Italian 1.00, Japanese 1.40, Mandarin 2.00); used by the length caption when no tokenization has run yet
+- `_phoneme_band` — returns `(color, label)` for a phoneme count: `<20` red "very short", `20–99` orange "short", `100–399` green "ideal", `400–509` orange "long", `≥510` red "will be chunked"
+- `_render_length_caption` — colored `st.caption` under the textarea showing exact phoneme count when `last_phonemes` matches current `(text, lang_code)`, else `~estimate`
+- `_load_sample` — `@st.cache_data`, reads `samples/{lang_code}/{filename}` resolved relative to `streamlit_app.py`
+- `_pick_sample` — returns the full sample text or a random non-empty line from a one-per-line pool, depending on `is_random`
+- `_set_text_from_sample` — `on_click` callback that writes the chosen sample into `st.session_state["text_input"]`; must run between reruns to avoid Streamlit's "widget key already instantiated" error
+- `_render_sample_buttons` — renders one row of buttons per language from `SAMPLE_BUTTONS[lang_code]`; each button wired via `on_click=_set_text_from_sample`
 
 ### Model
 
@@ -78,7 +87,7 @@ a=American English, b=British English, e=Spanish, f=French, h=Hindi, i=Italian, 
 
 ### Voice Discovery
 
-On first launch, `ensure_repo_downloaded` calls `huggingface_hub.snapshot_download` to fetch the model and all voice files in one event (~160 MB), with a spinner shown only when the local HuggingFace cache is incomplete (detected via `snapshot_download(..., local_files_only=True)` raising `LocalEntryNotFoundError`). `get_voices` then walks the local snapshot's `voices/` directory and sorts results by quality grade (best first, ties broken alphabetically) using the `VOICE_GRADES` table in `voice_grades.py` (sourced from [VOICES.md](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md)). Voice files follow the naming convention `{lang}{gender}_{name}` (e.g. `af_heart` — American English, female, "heart") with `.safetensors` extension. Ungraded voices (Spanish, Brazilian Portuguese, or any future addition not in `VOICE_GRADES`) sort to the end. After the initial download the app is fully offline; voices added upstream require clearing the HuggingFace cache to pick up.
+On first launch, `ensure_repo_downloaded` calls `huggingface_hub.snapshot_download` to fetch the model and all voice files in one event (~355 MB), with a spinner shown only when the local HuggingFace cache is incomplete (detected via `snapshot_download(..., local_files_only=True)` raising `LocalEntryNotFoundError`). `get_voices` then walks the local snapshot's `voices/` directory and sorts results by quality grade (best first, ties broken alphabetically) using the `VOICE_GRADES` table in `voice_grades.py` (sourced from [VOICES.md](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md)). Voice files follow the naming convention `{lang}{gender}_{name}` (e.g. `af_heart` — American English, female, "heart") with `.safetensors` extension. Ungraded voices (Spanish, Brazilian Portuguese, or any future addition not in `VOICE_GRADES`) sort to the end. After the initial download the app is fully offline; voices added upstream require clearing the HuggingFace cache to pick up.
 
 ### Performance
 
@@ -96,9 +105,12 @@ On first launch, `ensure_repo_downloaded` calls `huggingface_hub.snapshot_downlo
 1. Full-width `Language` selectbox at the top (hidden label)
 2. Two-column split: input panel (left) + controls and voice cards (right). Generated audio renders inline inside each card — no separate output row.
 
-**Left column:**
+**Left column (top to bottom):**
 - `st.text_area` (500 px tall, no character cap, hidden label) with placeholder `"Start typing here or paste any text you want to turn into lifelike speech..."`
-- `Tokenize` button immediately below, `disabled=not text.strip()`; clicking calls `render_phonemes(..., expanded=True)` inline
+- Sample button row (`_render_sample_buttons`) — three per-language buttons from `SAMPLE_BUTTONS[lang_code]`: a random-quote button (picks a line from `random.txt`) plus two literary excerpts. Each button is wired via `on_click=_set_text_from_sample`, which runs between reruns and can safely set `st.session_state["text_input"]`.
+- `Tokenize` button, `disabled=not text.strip()`; clicking stores `(text, lang_code, phonemes)` in `st.session_state["last_phonemes"]`
+- Utterance-length caption (`_render_length_caption`) — `st.caption` with exact phoneme count when `last_phonemes` matches, else `~estimate`; bands match VOICES.md guidance
+- Persistent phoneme expander (`_render_persistent_phonemes`) — opens automatically when `last_phonemes` matches current `(text, lang_code)`
 - `**Note:**` markdown heading followed by `PRONUNCIATION_TIPS` body — always visible, no expander
 
 **Right column:**
@@ -120,7 +132,7 @@ On first launch, `ensure_repo_downloaded` calls `huggingface_hub.snapshot_downlo
 - No explicit eviction — the cache grows with each (voice, text, speed, lang) tuple played, which is fine for typical sessions
 
 **Behavior:**
-- On initial render, `ensure_repo_downloaded` may show `st.spinner("Downloading Kokoro model and voices (one-time, ~160 MB)...")` when the local HuggingFace cache is incomplete; otherwise no spinner appears
+- On initial render, `ensure_repo_downloaded` may show an `st.spinner` for the one-time model + voices download when the local HuggingFace cache is incomplete; otherwise no spinner appears
 - If the first-launch download fails (e.g. offline with no cache), the script shows `st.error(...)` and halts via `st.stop()` instead of leaking a Python traceback
 - Chunk-by-chunk generation progress appears via `st.status` inside the active card during the Play-triggered run
 - Per-card errors surface via `st.exception()` inside the card; other cards remain functional
