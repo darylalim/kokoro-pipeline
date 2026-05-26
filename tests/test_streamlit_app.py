@@ -84,12 +84,19 @@ class TestEspeakLanguages:
     def test_has_all_espeak_language_codes(self) -> None:
         assert set(ESPEAK_LANGUAGES.keys()) == {"e", "f", "h", "i", "p"}
 
-    def test_maps_to_correct_espeak_codes(self) -> None:
-        assert ESPEAK_LANGUAGES["e"] == "es"
-        assert ESPEAK_LANGUAGES["f"] == "fr-fr"
-        assert ESPEAK_LANGUAGES["h"] == "hi"
-        assert ESPEAK_LANGUAGES["i"] == "it"
-        assert ESPEAK_LANGUAGES["p"] == "pt-br"
+    @pytest.mark.parametrize(
+        ("code", "espeak_lang"),
+        [
+            ("e", "es"),
+            ("f", "fr-fr"),
+            ("h", "hi"),
+            ("i", "it"),
+            ("p", "pt-br"),
+        ],
+        ids=["spanish", "french", "hindi", "italian", "portuguese"],
+    )
+    def test_maps_to_correct_espeak_codes(self, code: str, espeak_lang: str) -> None:
+        assert ESPEAK_LANGUAGES[code] == espeak_lang
 
     def test_covers_non_english_non_ja_non_zh_languages(self) -> None:
         en_ja_zh = {"a", "b", "j", "z"}
@@ -993,70 +1000,93 @@ class TestPronunciationTips:
 
 
 class TestFormatVoice:
-    def test_american_female(self) -> None:
-        assert _format_voice("af_heart") == "Heart (female) — A"
-
-    def test_american_male(self) -> None:
-        assert _format_voice("am_adam") == "Adam (male) — F+"
-
-    def test_british_female(self) -> None:
-        assert _format_voice("bf_alice") == "Alice (female) — D"
-
-    def test_japanese_female(self) -> None:
-        assert _format_voice("jf_alpha") == "Alpha (female) — C+"
-
-    def test_title_cases_name(self) -> None:
-        assert _format_voice("af_bella") == "Bella (female) — A-"
-
-    def test_ungraded_voice_omits_grade_suffix(self) -> None:
-        # Spanish/Portuguese voices have no published grades
-        assert _format_voice("ef_dora") == "Dora (female)"
-
-    def test_multi_underscore_name_keeps_all_parts(self) -> None:
-        assert _format_voice("af_some_long_name") == "Some Long Name (female)"
-
-    def test_unknown_gender_char_returns_name_only(self) -> None:
-        assert _format_voice("ax_mystery") == "Mystery"
-
-    def test_no_underscore_returns_raw(self) -> None:
-        assert _format_voice("af") == "af"
+    @pytest.mark.parametrize(
+        ("voice", "expected"),
+        [
+            ("af_heart", "Heart (female) — A"),
+            ("am_adam", "Adam (male) — F+"),
+            ("bf_alice", "Alice (female) — D"),
+            ("jf_alpha", "Alpha (female) — C+"),
+            ("af_bella", "Bella (female) — A-"),
+            # Spanish/Portuguese voices have no published grades
+            ("ef_dora", "Dora (female)"),
+            ("af_some_long_name", "Some Long Name (female)"),
+            ("ax_mystery", "Mystery"),
+            ("af", "af"),
+        ],
+        ids=[
+            "american-female",
+            "american-male",
+            "british-female",
+            "japanese-female",
+            "title-cases-name",
+            "ungraded-omits-suffix",
+            "multi-underscore-name",
+            "unknown-gender-char",
+            "no-underscore-raw",
+        ],
+    )
+    def test_format_voice(self, voice: str, expected: str) -> None:
+        assert _format_voice(voice) == expected
 
 
 class TestGenderCodeFromCheckboxes:
-    def test_both_checked_returns_none(self) -> None:
-        assert _gender_code_from_checkboxes(True, True) is None
-
-    def test_neither_checked_returns_none(self) -> None:
-        assert _gender_code_from_checkboxes(False, False) is None
-
-    def test_only_female_returns_f(self) -> None:
-        assert _gender_code_from_checkboxes(True, False) == "f"
-
-    def test_only_male_returns_m(self) -> None:
-        assert _gender_code_from_checkboxes(False, True) == "m"
+    @pytest.mark.parametrize(
+        ("female", "male", "expected"),
+        [
+            (True, True, None),
+            (False, False, None),
+            (True, False, "f"),
+            (False, True, "m"),
+        ],
+        ids=["both-checked", "neither-checked", "only-female", "only-male"],
+    )
+    def test_gender_code_from_checkboxes(
+        self, female: bool, male: bool, expected: str | None
+    ) -> None:
+        assert _gender_code_from_checkboxes(female, male) == expected
 
 
 class TestFilterVoicesByGender:
-    VOICES = ["af_bella", "af_heart", "am_adam", "am_echo"]
-
-    def test_all_returns_unchanged(self) -> None:
-        assert _filter_voices_by_gender(self.VOICES, None) == self.VOICES
-
-    def test_female_filters_to_f(self) -> None:
-        assert _filter_voices_by_gender(self.VOICES, "f") == ["af_bella", "af_heart"]
-
-    def test_male_filters_to_m(self) -> None:
-        assert _filter_voices_by_gender(self.VOICES, "m") == ["am_adam", "am_echo"]
-
-    def test_empty_input_returns_empty(self) -> None:
-        assert _filter_voices_by_gender([], "f") == []
-
-    def test_no_matches_returns_empty(self) -> None:
-        assert _filter_voices_by_gender(["af_bella"], "m") == []
-
-    def test_preserves_input_order(self) -> None:
-        voices = ["af_heart", "am_adam", "af_bella"]
-        assert _filter_voices_by_gender(voices, "f") == ["af_heart", "af_bella"]
+    @pytest.mark.parametrize(
+        ("voices", "gender_code", "expected"),
+        [
+            (
+                ["af_bella", "af_heart", "am_adam", "am_echo"],
+                None,
+                ["af_bella", "af_heart", "am_adam", "am_echo"],
+            ),
+            (
+                ["af_bella", "af_heart", "am_adam", "am_echo"],
+                "f",
+                ["af_bella", "af_heart"],
+            ),
+            (
+                ["af_bella", "af_heart", "am_adam", "am_echo"],
+                "m",
+                ["am_adam", "am_echo"],
+            ),
+            ([], "f", []),
+            (["af_bella"], "m", []),
+            (
+                ["af_heart", "am_adam", "af_bella"],
+                "f",
+                ["af_heart", "af_bella"],
+            ),
+        ],
+        ids=[
+            "no-filter-returns-all",
+            "filters-to-female",
+            "filters-to-male",
+            "empty-input",
+            "no-matches",
+            "preserves-input-order",
+        ],
+    )
+    def test_filter_voices_by_gender(
+        self, voices: list[str], gender_code: str | None, expected: list[str]
+    ) -> None:
+        assert _filter_voices_by_gender(voices, gender_code) == expected
 
 
 class TestGradeRank:
@@ -1145,35 +1175,35 @@ class TestEstimatePhonemes:
 
 
 class TestPhonemeBand:
-    def test_zero_is_red_very_short(self) -> None:
-        assert _phoneme_band(0) == ("red", "very short")
-
-    def test_below_20_is_red(self) -> None:
-        assert _phoneme_band(19) == ("red", "very short")
-
-    def test_20_is_orange_short(self) -> None:
-        assert _phoneme_band(20) == ("orange", "short")
-
-    def test_99_is_orange_short(self) -> None:
-        assert _phoneme_band(99) == ("orange", "short")
-
-    def test_100_is_green_ideal(self) -> None:
-        assert _phoneme_band(100) == ("green", "ideal")
-
-    def test_399_is_green_ideal(self) -> None:
-        assert _phoneme_band(399) == ("green", "ideal")
-
-    def test_400_is_orange_long(self) -> None:
-        assert _phoneme_band(400) == ("orange", "long")
-
-    def test_509_is_orange_long(self) -> None:
-        assert _phoneme_band(509) == ("orange", "long")
-
-    def test_510_is_red_chunked(self) -> None:
-        assert _phoneme_band(510) == ("red", "will be chunked")
-
-    def test_large_values_are_red_chunked(self) -> None:
-        assert _phoneme_band(10_000) == ("red", "will be chunked")
+    @pytest.mark.parametrize(
+        ("n", "expected"),
+        [
+            (0, ("red", "very short")),
+            (19, ("red", "very short")),
+            (20, ("orange", "short")),
+            (99, ("orange", "short")),
+            (100, ("green", "ideal")),
+            (399, ("green", "ideal")),
+            (400, ("orange", "long")),
+            (509, ("orange", "long")),
+            (510, ("red", "will be chunked")),
+            (10_000, ("red", "will be chunked")),
+        ],
+        ids=[
+            "zero-very-short",
+            "below-20-very-short",
+            "lower-bound-short",
+            "upper-bound-short",
+            "lower-bound-ideal",
+            "upper-bound-ideal",
+            "lower-bound-long",
+            "upper-bound-long",
+            "lower-bound-chunked",
+            "large-chunked",
+        ],
+    )
+    def test_phoneme_band(self, n: int, expected: tuple[str, str]) -> None:
+        assert _phoneme_band(n) == expected
 
 
 class TestRenderLengthCaption:
