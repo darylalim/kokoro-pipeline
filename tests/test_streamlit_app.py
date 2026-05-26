@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -11,17 +12,26 @@ from streamlit_app import (
     LANGUAGES,
     PRONUNCIATION_TIPS,
     REPO_ID,
+    SAMPLE_BUTTONS,
     SAMPLE_RATE,
     SPEED_OPTIONS,
+    _PHONEME_MULTIPLIERS,
     _audio_to_wav_bytes,
     _cache_key,
     _create_g2p,
+    _estimate_phonemes,
     _evict_old_audio,
     _filter_voices_by_gender,
     _find_stale_cached_audio,
     _format_voice,
     _gender_code_from_checkboxes,
+    _load_sample,
+    _phoneme_band,
+    _pick_sample,
+    _render_length_caption,
     _render_persistent_phonemes,
+    _render_sample_buttons,
+    _set_text_from_sample,
     _split_voices_for_display,
     ensure_repo_downloaded,
     generate_one,
@@ -1094,3 +1104,334 @@ class TestVoiceGrades:
     def test_all_grades_are_known(self) -> None:
         for voice, grade in VOICE_GRADES.items():
             assert grade in _GRADE_RANK, f"{voice!r} has unknown grade {grade!r}"
+
+
+class TestPhonemeMultipliersConfig:
+    def test_covers_all_languages(self) -> None:
+        assert set(_PHONEME_MULTIPLIERS.keys()) == set(LANGUAGES.values())
+
+    def test_all_values_are_positive_floats(self) -> None:
+        for code, mult in _PHONEME_MULTIPLIERS.items():
+            assert isinstance(mult, float), f"{code} multiplier is {type(mult).__name__}"
+            assert mult > 0, f"{code} multiplier {mult} must be positive"
+
+
+class TestEstimatePhonemes:
+    def test_empty_returns_zero(self) -> None:
+        assert _estimate_phonemes("", "a") == 0
+
+    def test_whitespace_only_returns_zero(self) -> None:
+        assert _estimate_phonemes("   \n  ", "a") == 0
+
+    def test_english_uses_low_multiplier(self) -> None:
+        assert _estimate_phonemes("hello world", "a") == int(11 * 0.85)
+
+    def test_british_english_same_as_american(self) -> None:
+        text = "hello world"
+        assert _estimate_phonemes(text, "b") == _estimate_phonemes(text, "a")
+
+    def test_japanese_higher_than_english(self) -> None:
+        text = "abcdefghij"
+        assert _estimate_phonemes(text, "j") > _estimate_phonemes(text, "a")
+
+    def test_mandarin_uses_highest_multiplier(self) -> None:
+        assert _estimate_phonemes("abcd", "z") == int(4 * 2.0)
+
+    def test_strips_leading_trailing_whitespace(self) -> None:
+        assert _estimate_phonemes("  hello  ", "a") == _estimate_phonemes("hello", "a")
+
+    def test_unknown_lang_uses_default(self) -> None:
+        assert _estimate_phonemes("hello", "x") == 5
+
+
+class TestPhonemeBand:
+    def test_zero_is_red_very_short(self) -> None:
+        assert _phoneme_band(0) == ("red", "very short")
+
+    def test_below_20_is_red(self) -> None:
+        assert _phoneme_band(19) == ("red", "very short")
+
+    def test_20_is_orange_short(self) -> None:
+        assert _phoneme_band(20) == ("orange", "short")
+
+    def test_99_is_orange_short(self) -> None:
+        assert _phoneme_band(99) == ("orange", "short")
+
+    def test_100_is_green_ideal(self) -> None:
+        assert _phoneme_band(100) == ("green", "ideal")
+
+    def test_399_is_green_ideal(self) -> None:
+        assert _phoneme_band(399) == ("green", "ideal")
+
+    def test_400_is_orange_long(self) -> None:
+        assert _phoneme_band(400) == ("orange", "long")
+
+    def test_509_is_orange_long(self) -> None:
+        assert _phoneme_band(509) == ("orange", "long")
+
+    def test_510_is_red_chunked(self) -> None:
+        assert _phoneme_band(510) == ("red", "will be chunked")
+
+    def test_large_values_are_red_chunked(self) -> None:
+        assert _phoneme_band(10_000) == ("red", "will be chunked")
+
+
+class TestRenderLengthCaption:
+    @staticmethod
+    def _reset_mocks() -> None:
+        st.caption.reset_mock()  # type: ignore[union-attribute]
+        st.session_state.pop("last_phonemes", None)
+
+    def test_empty_text_renders_nothing(self) -> None:
+        self._reset_mocks()
+        _render_length_caption("", "a")
+        st.caption.assert_not_called()  # type: ignore[union-attribute]
+
+    def test_whitespace_only_renders_nothing(self) -> None:
+        self._reset_mocks()
+        _render_length_caption("   \n  ", "a")
+        st.caption.assert_not_called()  # type: ignore[union-attribute]
+
+    def test_estimate_used_when_no_cached_phonemes(self) -> None:
+        self._reset_mocks()
+        _render_length_caption("hello world", "a")
+        st.caption.assert_called_once()  # type: ignore[union-attribute]
+        arg = st.caption.call_args[0][0]  # type: ignore[union-attribute]
+        assert "~" in arg
+        assert "9 phonemes" in arg
+        assert "very short" in arg
+        assert ":red[" in arg
+
+    def test_exact_count_used_when_cached_phonemes_match(self) -> None:
+        self._reset_mocks()
+        st.session_state["last_phonemes"] = ("hello world", "a", "x" * 50)
+        _render_length_caption("hello world", "a")
+        st.caption.assert_called_once()  # type: ignore[union-attribute]
+        arg = st.caption.call_args[0][0]  # type: ignore[union-attribute]
+        assert "~" not in arg
+        assert "50 phonemes" in arg
+        assert "short" in arg
+        assert ":orange[" in arg
+
+    def test_estimate_used_when_cached_for_different_text(self) -> None:
+        self._reset_mocks()
+        st.session_state["last_phonemes"] = ("other text", "a", "x" * 200)
+        _render_length_caption("hello world", "a")
+        arg = st.caption.call_args[0][0]  # type: ignore[union-attribute]
+        assert "~" in arg
+
+    def test_estimate_used_when_cached_for_different_lang(self) -> None:
+        self._reset_mocks()
+        st.session_state["last_phonemes"] = ("hello world", "b", "x" * 200)
+        _render_length_caption("hello world", "a")
+        arg = st.caption.call_args[0][0]  # type: ignore[union-attribute]
+        assert "~" in arg
+
+    def test_ideal_band_renders_green(self) -> None:
+        self._reset_mocks()
+        st.session_state["last_phonemes"] = ("xyz", "a", "x" * 250)
+        _render_length_caption("xyz", "a")
+        arg = st.caption.call_args[0][0]  # type: ignore[union-attribute]
+        assert ":green[" in arg
+        assert "ideal" in arg
+
+    def test_chunked_band_renders_red(self) -> None:
+        self._reset_mocks()
+        st.session_state["last_phonemes"] = ("xyz", "a", "x" * 600)
+        _render_length_caption("xyz", "a")
+        arg = st.caption.call_args[0][0]  # type: ignore[union-attribute]
+        assert ":red[" in arg
+        assert "will be chunked" in arg
+
+    def test_long_band_renders_orange(self) -> None:
+        self._reset_mocks()
+        st.session_state["last_phonemes"] = ("xyz", "a", "x" * 450)
+        _render_length_caption("xyz", "a")
+        arg = st.caption.call_args[0][0]  # type: ignore[union-attribute]
+        assert ":orange[" in arg
+        assert "long" in arg
+
+
+class TestSampleButtonsConfig:
+    def test_covers_all_languages(self) -> None:
+        assert set(SAMPLE_BUTTONS.keys()) == set(LANGUAGES.values())
+
+    def test_each_language_has_three_buttons(self) -> None:
+        for lang, buttons in SAMPLE_BUTTONS.items():
+            assert len(buttons) == 3, f"{lang} has {len(buttons)} buttons, expected 3"
+
+    def test_each_language_has_exactly_one_random_button(self) -> None:
+        for lang, buttons in SAMPLE_BUTTONS.items():
+            random_count = sum(1 for _, _, is_random in buttons if is_random)
+            assert random_count == 1, f"{lang} has {random_count} random buttons"
+
+    def test_button_tuples_have_correct_shape(self) -> None:
+        for lang, buttons in SAMPLE_BUTTONS.items():
+            for entry in buttons:
+                assert len(entry) == 3
+                label, filename, is_random = entry
+                assert isinstance(label, str) and label
+                assert isinstance(filename, str) and filename.endswith(".txt")
+                assert isinstance(is_random, bool)
+
+    def test_filenames_unique_within_language(self) -> None:
+        for lang, buttons in SAMPLE_BUTTONS.items():
+            filenames = [b[1] for b in buttons]
+            assert len(set(filenames)) == len(filenames), f"{lang} has duplicate filenames"
+
+
+class TestSampleFilesExist:
+    def test_all_referenced_files_exist_and_nonempty(self) -> None:
+        import streamlit_app
+
+        samples_dir = Path(streamlit_app.__file__).parent / "samples"
+        for lang, buttons in SAMPLE_BUTTONS.items():
+            for _, filename, _ in buttons:
+                path = samples_dir / lang / filename
+                assert path.exists(), f"missing: {path}"
+                assert path.stat().st_size > 0, f"empty: {path}"
+
+
+class TestLoadSample:
+    def test_returns_content_for_existing_file(self) -> None:
+        content = _load_sample("a", "random.txt")
+        assert content != ""
+        assert isinstance(content, str)
+
+    def test_returns_empty_for_missing_file(self) -> None:
+        assert _load_sample("a", "definitely_does_not_exist.txt") == ""
+
+    def test_returns_empty_for_unknown_lang(self) -> None:
+        assert _load_sample("xx", "random.txt") == ""
+
+    def test_strips_trailing_whitespace(self) -> None:
+        content = _load_sample("a", "random.txt")
+        assert content == content.strip()
+
+    def test_handles_utf8_content(self) -> None:
+        content = _load_sample("j", "kokoro.txt")
+        assert "私" in content
+
+
+class TestPickSample:
+    def test_non_random_returns_full_content(self) -> None:
+        full = _load_sample("a", "gatsby.txt")
+        picked = _pick_sample("a", "gatsby.txt", is_random=False)
+        assert picked == full
+
+    def test_random_returns_one_line_from_pool(self) -> None:
+        full = _load_sample("a", "random.txt")
+        lines = [line for line in full.splitlines() if line.strip()]
+        picked = _pick_sample("a", "random.txt", is_random=True)
+        assert picked in lines
+
+    def test_random_can_pick_multiple_distinct_lines(self) -> None:
+        seen = set()
+        for _ in range(50):
+            seen.add(_pick_sample("a", "random.txt", is_random=True))
+        full = _load_sample("a", "random.txt")
+        n_lines = len([line for line in full.splitlines() if line.strip()])
+        assert len(seen) >= min(5, n_lines // 2)
+
+    def test_missing_file_returns_empty(self) -> None:
+        assert _pick_sample("a", "nonexistent.txt", is_random=False) == ""
+        assert _pick_sample("a", "nonexistent.txt", is_random=True) == ""
+
+    def test_random_avoids_consecutive_repeats(self) -> None:
+        for k in list(st.session_state):
+            if isinstance(k, str) and k.startswith("_last_random_"):
+                del st.session_state[k]
+        prev = None
+        for _ in range(20):
+            pick = _pick_sample("a", "random.txt", is_random=True)
+            if prev is not None:
+                assert pick != prev, f"consecutive repeat: {pick!r}"
+            prev = pick
+
+
+class TestRenderSampleButtons:
+    @staticmethod
+    def _reset_mocks() -> None:
+        st.button.reset_mock()  # type: ignore[union-attribute]
+        st.button.return_value = False  # type: ignore[union-attribute]
+        st.columns.reset_mock()  # type: ignore[union-attribute]
+        st.rerun.reset_mock()  # type: ignore[union-attribute]
+        st.session_state.pop("text_input", None)
+
+    def test_renders_nothing_for_unknown_language(self) -> None:
+        self._reset_mocks()
+        _render_sample_buttons("xx")
+        st.columns.assert_not_called()  # type: ignore[union-attribute]
+        st.button.assert_not_called()  # type: ignore[union-attribute]
+
+    def test_creates_one_column_per_button(self) -> None:
+        self._reset_mocks()
+        _render_sample_buttons("a")
+        st.columns.assert_called_once_with(3)  # type: ignore[union-attribute]
+
+    def test_renders_one_button_per_entry(self) -> None:
+        self._reset_mocks()
+        _render_sample_buttons("a")
+        assert st.button.call_count == 3  # type: ignore[union-attribute]
+
+    def test_button_keys_are_language_and_filename_scoped(self) -> None:
+        self._reset_mocks()
+        _render_sample_buttons("a")
+        keys = [call.kwargs.get("key") for call in st.button.call_args_list]  # type: ignore[union-attribute]
+        assert "sample_a_random" in keys
+        assert "sample_a_gatsby" in keys
+        assert "sample_a_frankenstein" in keys
+
+    def test_button_uses_on_click_callback(self) -> None:
+        self._reset_mocks()
+        _render_sample_buttons("a")
+        for call in st.button.call_args_list:  # type: ignore[union-attribute]
+            assert call.kwargs.get("on_click") is _set_text_from_sample
+
+    def test_button_args_match_entry(self) -> None:
+        self._reset_mocks()
+        _render_sample_buttons("a")
+        seen_args = [call.kwargs.get("args") for call in st.button.call_args_list]  # type: ignore[union-attribute]
+        expected = [("a", fname, is_random) for _, fname, is_random in SAMPLE_BUTTONS["a"]]
+        assert seen_args == expected
+
+    def test_renders_for_non_english_language(self) -> None:
+        self._reset_mocks()
+        _render_sample_buttons("j")
+        st.columns.assert_called_once_with(3)  # type: ignore[union-attribute]
+        assert st.button.call_count == 3  # type: ignore[union-attribute]
+
+    def test_button_labels_use_localized_text(self) -> None:
+        self._reset_mocks()
+        _render_sample_buttons("j")
+        labels = [call.args[0] for call in st.button.call_args_list]  # type: ignore[union-attribute]
+        assert any("こころ" in label for label in labels)
+
+
+class TestSetTextFromSample:
+    @staticmethod
+    def _reset() -> None:
+        st.session_state.pop("text_input", None)
+
+    def test_non_random_loads_full_content(self) -> None:
+        self._reset()
+        _set_text_from_sample("a", "gatsby.txt", False)
+        full = _load_sample("a", "gatsby.txt")
+        assert st.session_state["text_input"] == full
+
+    def test_random_loads_one_line_from_pool(self) -> None:
+        self._reset()
+        _set_text_from_sample("a", "random.txt", True)
+        full = _load_sample("a", "random.txt")
+        lines = [line for line in full.splitlines() if line.strip()]
+        assert st.session_state["text_input"] in lines
+
+    def test_missing_file_sets_empty_string(self) -> None:
+        self._reset()
+        _set_text_from_sample("a", "nonexistent.txt", False)
+        assert st.session_state["text_input"] == ""
+
+    def test_works_for_non_english(self) -> None:
+        self._reset()
+        _set_text_from_sample("j", "kokoro.txt", False)
+        assert "私" in st.session_state["text_input"]

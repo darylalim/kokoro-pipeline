@@ -1,7 +1,8 @@
 import io
+import random
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, NamedTuple, TypedDict
 
 import numpy as np
 import soundfile as sf
@@ -17,6 +18,12 @@ class VoiceResult(TypedDict):
     audio: np.ndarray
     voice: str
     phonemes: str
+
+
+class SampleButton(NamedTuple):
+    label: str
+    filename: str
+    is_random: bool
 
 
 SAMPLE_RATE = 24000
@@ -57,6 +64,62 @@ SPEED_OPTIONS: list[float] = [0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]
 DEFAULT_SPEED_INDEX: int = SPEED_OPTIONS.index(1.0)
 
 AUDIO_CACHE_LIMIT: int = 20
+
+_PHONEME_MULTIPLIERS: dict[str, float] = {
+    "a": 0.85, "b": 0.85,
+    "e": 0.90, "f": 0.90, "p": 0.90,
+    "h": 1.00, "i": 1.00,
+    "j": 1.40,
+    "z": 2.00,
+}
+
+SAMPLE_BUTTONS: dict[str, list[SampleButton]] = {
+    "a": [
+        SampleButton("🎲 Random Quote", "random.txt", True),
+        SampleButton("📕 Gatsby", "gatsby.txt", False),
+        SampleButton("📗 Frankenstein", "frankenstein.txt", False),
+    ],
+    "b": [
+        SampleButton("🎲 Random Quote", "random.txt", True),
+        SampleButton("📕 Pride & Prejudice", "pride.txt", False),
+        SampleButton("📗 Sherlock Holmes", "sherlock.txt", False),
+    ],
+    "e": [
+        SampleButton("🎲 Cita Aleatoria", "random.txt", True),
+        SampleButton("📕 Don Quijote", "quijote.txt", False),
+        SampleButton("📗 Bécquer", "becquer.txt", False),
+    ],
+    "f": [
+        SampleButton("🎲 Citation", "random.txt", True),
+        SampleButton("📕 Misérables", "miserables.txt", False),
+        SampleButton("📗 Candide", "candide.txt", False),
+    ],
+    "h": [
+        SampleButton("🎲 लोकोक्ति", "random.txt", True),
+        SampleButton("📕 कबीर", "kabir.txt", False),
+        SampleButton("📗 रहीम", "rahim.txt", False),
+    ],
+    "i": [
+        SampleButton("🎲 Citazione", "random.txt", True),
+        SampleButton("📕 Divina Commedia", "divina.txt", False),
+        SampleButton("📗 Promessi Sposi", "promessi.txt", False),
+    ],
+    "j": [
+        SampleButton("🎲 ことわざ", "random.txt", True),
+        SampleButton("📕 こころ", "kokoro.txt", False),
+        SampleButton("📗 坊っちゃん", "botchan.txt", False),
+    ],
+    "p": [
+        SampleButton("🎲 Citação", "random.txt", True),
+        SampleButton("📕 Brás Cubas", "bras_cubas.txt", False),
+        SampleButton("📗 Iracema", "iracema.txt", False),
+    ],
+    "z": [
+        SampleButton("🎲 古语", "random.txt", True),
+        SampleButton("📕 唐诗", "tangshi.txt", False),
+        SampleButton("📗 论语", "lunyu.txt", False),
+    ],
+}
 
 
 @st.cache_resource
@@ -148,6 +211,72 @@ def _split_voices_for_display(
 
 def _cache_key(voice: str, text: str, speed: float, lang_code: str) -> str:
     return f"audio:{voice}:{lang_code}:{speed}:{hash(text)}"
+
+
+def _estimate_phonemes(text: str, lang_code: str) -> int:
+    stripped = text.strip()
+    if not stripped:
+        return 0
+    mult = _PHONEME_MULTIPLIERS.get(lang_code, 1.0)
+    return int(len(stripped) * mult)
+
+
+def _phoneme_band(n: int) -> tuple[str, str]:
+    if n < 20:
+        return ("red", "very short")
+    if n < 100:
+        return ("orange", "short")
+    if n < 400:
+        return ("green", "ideal")
+    if n < 510:
+        return ("orange", "long")
+    return ("red", "will be chunked")
+
+
+@st.cache_data
+def _load_sample(lang_code: str, filename: str) -> str:
+    path = Path(__file__).parent / "samples" / lang_code / filename
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8").strip()
+
+
+def _pick_sample(lang_code: str, filename: str, is_random: bool) -> str:
+    content = _load_sample(lang_code, filename)
+    if not content:
+        return ""
+    if not is_random:
+        return content
+    lines = [line for line in content.splitlines() if line.strip()]
+    if not lines:
+        return ""
+    last_key = f"_last_random_{lang_code}_{filename}"
+    last = st.session_state.get(last_key)
+    pick = random.choice(lines)
+    if pick == last and len(lines) > 1:
+        pick = random.choice([line for line in lines if line != last])
+    st.session_state[last_key] = pick
+    return pick
+
+
+def _set_text_from_sample(lang_code: str, filename: str, is_random: bool) -> None:
+    st.session_state["text_input"] = _pick_sample(lang_code, filename, is_random)
+
+
+def _render_sample_buttons(lang_code: str) -> None:
+    buttons = SAMPLE_BUTTONS.get(lang_code, [])
+    if not buttons:
+        return
+    cols = st.columns(len(buttons))
+    for col, (label, filename, is_random) in zip(cols, buttons):
+        with col:
+            st.button(
+                label,
+                key=f"sample_{lang_code}_{Path(filename).stem}",
+                use_container_width=True,
+                on_click=_set_text_from_sample,
+                args=(lang_code, filename, is_random),
+            )
 
 
 def _find_stale_cached_audio(
@@ -271,6 +400,20 @@ def render_phonemes(phonemes: str, *, expanded: bool = False) -> None:
         st.code(phonemes)
 
 
+def _render_length_caption(text: str, lang_code: str) -> None:
+    if not text.strip():
+        return
+    saved = st.session_state.get("last_phonemes")
+    if saved and saved[0] == text and saved[1] == lang_code:
+        n = len(saved[2])
+        prefix = ""
+    else:
+        n = _estimate_phonemes(text, lang_code)
+        prefix = "~"
+    color, label = _phoneme_band(n)
+    st.caption(f":{color}[**{prefix}{n} phonemes** — {label}]")
+
+
 def _render_persistent_phonemes(text: str, lang_code: str) -> None:
     saved = st.session_state.get("last_phonemes")
     if saved and saved[0] == text and saved[1] == lang_code:
@@ -303,6 +446,7 @@ with input_col:
         key="text_input",
         label_visibility="collapsed",
     )
+    _render_sample_buttons(lang_code)
     tokenize_clicked = st.button("Tokenize", disabled=not text_input.strip())
     if tokenize_clicked:
         st.session_state["last_phonemes"] = (
@@ -310,6 +454,7 @@ with input_col:
             lang_code,
             tokenize_text(text_input, lang_code),
         )
+    _render_length_caption(text_input, lang_code)
     _render_persistent_phonemes(text_input, lang_code)
     st.markdown("**Note:**")
     st.markdown(PRONUNCIATION_TIPS)
